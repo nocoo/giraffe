@@ -167,44 +167,21 @@ export function AppSidebar({
 		</Avatar>
 	);
 
+	const brandTitle = project?.title ?? "Giraffe";
+
 	return (
 		<Sidebar collapsed={collapsed}>
-			<SidebarHeader>
-				<div
-					className={`flex w-full items-center ${collapsed ? "justify-center" : "justify-between pl-basalt-layout-sm"}`}
-				>
-					<Link
-						href="/"
-						aria-label="Giraffe 首页"
-						className="flex min-w-0 items-center gap-basalt-space-lg text-basalt-foreground no-underline hover:no-underline"
-					>
-						<BrandMark />
-						{collapsed ? null : (
-							<>
-								<span className="truncate text-basalt-xl font-semibold text-basalt-foreground md:text-basalt-2xl">
-									{project?.title ?? "Giraffe"}
-								</span>
-								<span className="shrink-0 rounded-basalt-md bg-basalt-secondary px-basalt-space-md py-basalt-space-xs font-mono text-basalt-xs leading-basalt-tight font-medium text-basalt-muted-foreground">
-									v{APP_VERSION}
-								</span>
-							</>
-						)}
-					</Link>
-					{!collapsed && onToggle ? (
-						<Button
-							variant="ghost"
-							size="icon"
-							className="w-7 shrink-0"
-							onClick={onToggle}
-							aria-label="折叠侧栏"
-						>
-							<PanelLeft aria-hidden="true" />
-						</Button>
-					) : null}
-				</div>
-			</SidebarHeader>
 			{collapsed ? (
 				<>
+					<SidebarHeader>
+						<Link
+							href="/"
+							aria-label="Giraffe 首页"
+							className="text-basalt-foreground no-underline hover:no-underline"
+						>
+							<BrandMark />
+						</Link>
+					</SidebarHeader>
 					<Button
 						variant="ghost"
 						size="icon"
@@ -259,6 +236,28 @@ export function AppSidebar({
 				</>
 			) : (
 				<>
+					<SidebarHeader>
+						<div className="flex w-full items-center justify-between">
+							<Link
+								href="/"
+								aria-label="Giraffe 首页"
+								className="flex min-w-0 items-center gap-basalt-space-lg text-basalt-foreground no-underline hover:no-underline"
+							>
+								<BrandMark />
+								<span className="truncate text-lg font-semibold text-basalt-foreground md:text-xl">
+									{brandTitle}
+								</span>
+								<span className="shrink-0 rounded-basalt-md bg-basalt-secondary px-basalt-space-md py-basalt-space-xs font-mono text-basalt-xs leading-basalt-tight font-medium text-basalt-muted-foreground">
+									v{APP_VERSION}
+								</span>
+							</Link>
+							{onToggle ? (
+								<Button variant="ghost" size="icon" onClick={onToggle} aria-label="折叠侧栏">
+									<PanelLeft aria-hidden="true" />
+								</Button>
+							) : null}
+						</div>
+					</SidebarHeader>
 					<div className="px-basalt-nav-inset">
 						<SidebarSearch data-sidebar-search-trigger="true" onClick={openSearch}>
 							搜索
