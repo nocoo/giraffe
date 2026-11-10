@@ -2,7 +2,6 @@ import { Button, ContentIsland, Sheet, SheetContent, SheetTitle } from "@nocoo/b
 import { AppHeader } from "@nocoo/basalt/components/app-header";
 import { AppMain, AppSkipLink, AppShell as Shell } from "@nocoo/basalt/components/app-shell";
 import { Banner } from "@nocoo/basalt/components/banner";
-import { LinkButton } from "@nocoo/basalt/components/button";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { useTheme } from "@nocoo/basalt/providers/theme";
@@ -15,8 +14,7 @@ import { AppSidebar } from "./app-sidebar";
 import { DataTimeControl, DataTimeProvider } from "./data-time";
 import { EmptyState } from "./empty-state";
 import { EnvironmentSwitch } from "./environment-switch";
-import { GithubIcon } from "./github-icon";
-import { HeaderTooltip, HexlyLink } from "./header-links";
+import { GithubRepoLink, HeaderTooltip, HexlyLink } from "./header-links";
 import { RefreshControl } from "./refresh-control";
 import { useRepositoryScope } from "./repository-scope";
 import { ThemeToggle } from "./theme-toggle";
@@ -115,7 +113,6 @@ export function AppShell() {
 										ref={mobileTriggerRef}
 										variant="ghost"
 										size="icon"
-										className="h-8 w-8 shrink-0"
 										onClick={() => setMobileOpen(true)}
 										aria-label="打开导航"
 									>
@@ -133,21 +130,7 @@ export function AppShell() {
 								{location.pathname !== "/settings" ? (
 									<DataTimeControl key={`${location.pathname}:${scope}`} />
 								) : null}
-								{!isMobile && (
-									<HeaderTooltip label="GitHub repository">
-										<LinkButton
-											variant="ghost"
-											size="icon"
-											href="https://github.com/nocoo/giraffe"
-											target="_blank"
-											rel="noopener noreferrer"
-											aria-label="GitHub"
-											className="w-8 rounded-basalt-md text-basalt-muted-foreground hover:text-basalt-foreground [&_svg]:size-[1.125rem]"
-										>
-											<GithubIcon aria-hidden="true" strokeWidth={1.5} />
-										</LinkButton>
-									</HeaderTooltip>
-								)}
+								{!isMobile ? <GithubRepoLink /> : null}
 								{!isMobile && <HexlyLink />}
 								<ThemeToggle aria-label={`切换主题（当前 ${theme}）`} />
 							</>
