@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.29.1 - 2026-11-10
+
+### Changed
+
+- Routine dependency upgrades (Hono, Vitest, Tailwind CSS, Biome, Playwright, lucide-react,
+  GraphQL 17).
+
 ## v0.29.0 - 2026-11-06
 
 ### Changed

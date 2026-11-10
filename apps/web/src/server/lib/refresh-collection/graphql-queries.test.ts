@@ -14,7 +14,7 @@ const introspection = JSON.parse(
 		"utf8",
 	),
 ) as IntrospectionQuery;
-const schema = buildClientSchema(introspection);
+const schema = buildClientSchema(introspection, { assumeValid: true });
 
 const sampleDays = [
 	{ date: "2026-10-29", since: "2026-10-28T16:00:00.000Z", until: "2026-10-29T16:00:00.000Z" },

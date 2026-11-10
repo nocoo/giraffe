@@ -194,6 +194,7 @@ database_id = "<prod>"
 - 应用内无 `/login`、无 OAuth、无 session cookie。
 
 文件约定：
+
 - `src/server/middleware/access.ts` — JWT 校验与本地短路
 - `src/server/lib/access-identity.ts` — 从 JWT 解析展示用身份
 
@@ -204,11 +205,13 @@ database_id = "<prod>"
 必填 scope：`repo`、`read:org`、`read:user`、`notifications`。录入时读取 `X-OAuth-Scopes`，写入 `accounts.scopes`。`accounts.capabilities` 只表示 **token 级** scope 是否出现（例如有没有 `notifications`），不能表示某个仓库的 Traffic / security 权限——那些还依赖仓库角色与 SSO。跨仓列表缺 token 级 scope 时返回 `capability_missing`；单仓 Traffic 在 GitHub 403/404 时快照 `forbidden: true`；单仓 security 403/404 时快照 `unavailable: true`。不得把账号级 boolean 当成仓库真相。细则见 [04](04-server.md)。
 
 `POST /api/accounts` 校验：
+
 1. `GET https://api.github.com/user` 必须成功
 2. 响应头 `X-OAuth-Scopes` 必须覆盖必填 scope，否则 400
 3. 通过后再加密入库
 
 加密约定（AES-256-GCM）：
+
 - 密钥环：Worker secret `TOKEN_ENCRYPTION_KEY_V<n>`（32 字节，hex 或 base64）。当前写入版本由 `TOKEN_ENCRYPTION_KEY_CURRENT`（整数）指定
 - 解密用行上的 `key_version` 选对应 secret；加密新值用 current
 - 每次加密使用 **12 字节随机 IV**，不得复用
@@ -219,6 +222,7 @@ database_id = "<prod>"
 - 调用 GitHub 时在 Worker 内解密。日志、错误体、trace 必须 sanitize，禁止出现 token 或信封明文
 
 文件约定：
+
 - `src/server/routes/accounts.ts`
 - `src/server/lib/token-crypto.ts`
 - `src/server/lib/github-client.ts`
@@ -283,6 +287,7 @@ database_id = "<prod>"
 已停用的历史日报基线表。应用不再写入或读取，只在每次刷新时删除 30 天前的行，使旧数据自然过期；表本身按增量迁移原则保留，账号删除时级联删除。
 
 读取路径：
+
 - GET：只读快照，带 `fetched_at`。无快照返回 409 `snapshot_missing`，不回源、不写库
 - `POST /api/refresh`：Origin 校验后回源 GitHub，覆写当前快照，再返回新快照
 - 首版不做 Cron。只接受 `POST /api/refresh`（见 [04](04-server.md)）；Server 不得在 GET 里偷刷新。何时由 Client 调用由 05 定
@@ -290,6 +295,7 @@ database_id = "<prod>"
 隔离见 [5.1](#51-cloudflare-资源命名)：生产只用远程 `giraffe-db`。E2E 打本机 persist 目录里的 SQLite，库内含 `_test_marker`。详见 6DQ D1。细节表结构以 03 为准。
 
 文件约定：
+
 - `src/server/lib/db/d1.ts`
 - `src/server/lib/db/accounts.ts`
 - `src/server/lib/db/snapshots.ts`
@@ -454,6 +460,7 @@ Client 只通过 HTTP 契约消费 Server。Server 测试不得 import Client。
 ## 13. 原子化提交
 
 全程坚持，不攒大批量 diff。
+
 - Conventional Commits：`<type>: <short description>`，祈使句，全小写，≤50 字符
 - type：`fix` `feat` `docs` `test` `refactor` `chore`
 - 一次 commit 只含一个逻辑变更

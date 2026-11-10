@@ -215,6 +215,7 @@ preserved without changing prototypes. Invalid/deeper bodies return 400 `invalid
 payloads return 400 `payload_too_large`. Giraffe stores other fields opaquely.
 The complete request body has a 100,000-byte transport cap, independent of the
 serialized-payload cap; excess whitespace/escaping does not bypass it.
+
 - Create without a revision or with `If-Match: "0"` (the ETag of missing state).
   The zero header is create-only: existing state, including a concurrent create,
   returns 409 `revision_conflict` without overwriting it. It takes precedence over
@@ -259,6 +260,7 @@ OWNER='nocoo'; NAME='giraffe'; REPOSITORY="$OWNER/$NAME"
 Use Giraffe's account ID and API token, not a GitHub login, PAT or model key.
 Use HTTPS, disable shell tracing and keep the bot token in private configuration.
 Never put credentials in URLs, logs, report payloads or persisted browser state.
+
 - Tokens are hash-only, fixed-account, revocable and expiring: **1-90 days,
   default 30**. Raw tokens are returned once, when minted. Revocation applies
   on the next request. Tokens cannot change the dashboard's active account.
@@ -474,6 +476,7 @@ streams, contributions, settings and run-list GET responses (200/304) include
 names, millisecond durations and safe numeric work counters. It contains no SQL, IDs, token material,
 repository names or upstream diagnostics. Timings are request-local headers;
 they do not enter the JSON body, source versions or ETag input.
+
 - `auth`: bearer hashing, token lookup and token validation.
 - `d1_1`, `d1_2`, ...: each actual D1 round trip in execution order, including
   authentication. A batch is one round trip, not one per SQL statement.
@@ -615,6 +618,7 @@ payloads are never decoded and hashed on GET. It is not an ETag; `/sources` ETag
 response, so refresh metadata can change an ETag while content versions stay equal.
 
 The exact recipe in [content-version.ts](../apps/web/src/server/lib/content-version.ts):
+
 1. At write time, start with the saved logical snapshot after page splitting and
    size limits, reassemble its pages, and apply `prSnapshot` to normalize a root
    `pull_requests` list. Factory stream writes start with saved raw
@@ -796,6 +800,7 @@ for resource in repos issues prs ci factory; do api "$API/$resource?scope=all"; 
 ```
 
 Item fields (saved metadata can add fields; do not reject unknown observation data):
+
 - `Repo`: `name_with_owner`, `name`, `owner_login`, `description`, `stargazer_count`,
   `fork_count`, `open_issue_count`, `primary_language`, `pushed_at`, `visibility`,
   `is_private`, `is_archived`, `is_fork`, `url`, `statistics_enabled`, `starred`,
@@ -888,6 +893,7 @@ default-workflow evidence exists. It is not a successful zero. `unknown` replace
 the former repository sentinel `none` (breaking change in 0.15.14).
 `repos[].release.pipeline` independently remains `broken | flaky | healthy | idle |
 none`; its `none` means no default-branch release workflow, not repository health.
+
 - Project verdicts use only runs on the **known default branch**
   from saved repository details. Missing/empty default branch, null run branch,
   feature/PR branches and tag refs are not assumed to be default-branch evidence.

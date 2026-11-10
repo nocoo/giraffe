@@ -100,6 +100,7 @@ GitHub 字段名跟 REST/GraphQL 对齐（`login`、`nameWithOwner`、`stargazer
 Apply additive `0019_catalog_history.sql` after the activity migration. It adds
 three account-cascading tables without a factory-run foreign key, so discovery
 history survives ordinary run garbage collection:
+
 - `catalog_repositories`: `(account_id, identity_key)` primary key, nullable
   stable `github_id`, case-insensitive `repo`, last-known `row_payload` (plain
   existing repository JSON, at most 16,000 UTF-8 bytes), four nullable discovery
@@ -138,6 +139,7 @@ removed mutable stars or synthesize history; restore a verified backup only unde
 separate operational authorization.
 
 Apply `0020_catalog_identity_safety.sql` before the repaired catalog writer:
+
 - Add `catalog_repositories.name_current INTEGER NOT NULL DEFAULT 1`, constrained
   to 0/1, and replace `catalog_current_name` with the current-ownership predicate.
   Existing rows remain current; a same-name replacement can keep its unresolved
@@ -655,6 +657,7 @@ oversized row. Truncation remains explicit; the two-page limit is unchanged.
 ## 5. 刷新与删除
 
 `POST /api/refresh`：
+
 1. 对请求里的 **GitHub kind** 用当前 active account 的 PAT 出站（经 `githubFetch`）。仅 `insights` 的刷新不打 GitHub。
 2. 写成对应 snapshots 行（含分页）。
 3. 重算 `insights`。显式请求且源不足/truncated → 409。显式且 2 页仍超 → 截断写入。隐式且源不足或 2 页仍超 → 跳过。完整规则见 04。

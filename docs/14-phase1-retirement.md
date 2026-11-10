@@ -22,6 +22,7 @@ runtime. Account management and API token management remain available.
 ## Retired routes
 
 Browser routes are removed and return authenticated `404 not_found`:
+
 - `POST /api/refresh` and `POST /api/factory/refresh`
 - `GET|POST /api/factory/runs`
 - `GET /api/factory/runs/latest`
@@ -66,6 +67,7 @@ browser writes and hash-only expiring machine tokens are unchanged.
 The root `package.json` is the authoritative `0.26.0` version. Merge/deployment is
 left to the owner; do not deploy from a laptop. After an authorized merge and
 successful release workflow, verify on `https://giraffe.hexly.ai`:
+
 1. `/api/live` reports `0.26.0` with a healthy D1 probe.
 2. Dashboard and repository pages render; missing data shows an empty state,
    and existing snapshots retain their original dates.

@@ -145,6 +145,7 @@ tests/e2e/                         # L3；由 scripts/run-e2e-bdd.ts 跑
 peers：`react` / `react-dom` ^19、`lucide-react`、`recharts` ^3。不用 `DataTable`，因此 **不安** `@tanstack/react-table`。
 
 `package.json` 脚本：
+
 - `dev` — Vite `:7045` HMR + wrangler `:37045`（`/api` proxy）
 - `build` — `vite build` → `dist/client`
 - `test:e2e:bdd` — `scripts/run-e2e-bdd.ts`（有 `src/client` 后不再 phase-1 早退；失败即非 0。pre-push **不**跑它）
@@ -191,6 +192,7 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 | L3  | `LayerCard.Well`（`Primary` 是别名） | `--basalt-bright`      |
 
 配方：
+
 - Begin with Basalt `PageHeader`, flush on the island. Business pages use `BusinessPageHeader` to compose the repository scope, compact search/sort controls and actions beside the title. At narrow widths, keep scope beside the title and wrap search/sort only when needed. Use existing small controls and design-token spacing; do not duplicate the library header.
 - 分区用 `SectionRule`。卡片标题留在 `LayerCard.Header`。
 - 网格仓卡：岛上裸 `LayerCard padding="md"`，不要 Header/Body。
@@ -253,6 +255,7 @@ Basalt `ContentIsland` 已是 L1 岛。不要再包一层自定义 card 当岛�
 ### 5.5a 单行页头
 
 `BusinessPageHeader` 是项目对 Basalt `PageHeader` 的覆盖：**一页只占一行**（≥1024px）。
+
 - `title`（`h1`，24px/600）后紧跟 `description` 作为 muted 后缀，单行截断并带 `title` 提示；不为描述单开一行。
 - `meta`（数据时间等只读控件）、`RepositoryScopeFilter`、`filters`、`actions` 同处一个 toolbar，`margin-left:auto` 右对齐，控件不收缩；窄屏整体换行到标题下方，不挤压标题。
 - 所有页头控件按 28px toolbar 密度（`h-7` 输入、`Button size="sm"`、Basalt SegmentControl 的 28px 选项），不在 32/34px 之间混排。
@@ -297,6 +300,7 @@ Snapshot headers show the saved data timestamp and compact elapsed age, updated 
 ### 6.1 ViewModel
 
 每个 `src/client/viewmodels/*.ts`：
+
 - 导出纯函数：把 03 JSON + UI 状态（query、sort、view）变成渲染用的 plain object。
 - 可导出 `useXViewModel()`：只依赖 `react`（`useState` / `useCallback` / `useMemo` / `useEffect` / `useRef`）、`../lib/api.ts` 与其他 ViewModel。初次 GET 必须先 `ensureSession()`，响应再校验账号。路由/layout 不直接请求 API。
 - **禁止** import：`react-dom`、`@nocoo/basalt`、`*.tsx`、`document` / `window`（clipboard 纯函数只返回字符串，真正写剪贴板在 route 里用 Basalt `ClipboardText`）。
@@ -313,6 +317,7 @@ async function send(resource: string, init?: RequestInit): Promise<Response> {
 ```
 
 `resource` 不含前导 `/api/`，例如 `repos`、`accounts/${id}/activate`。``fetch(`/api/${resource}`)`` 的第一段 quasi 为 `/api/`，能过 `gate:client-fetch`。
+
 - GET：无 body。
 - POST：有 body 时 `Content-Type: application/json`。Origin 由浏览器设，代码不得手写 `Origin`。
 - DELETE：无 body。
@@ -386,6 +391,7 @@ also collect notifications and derive selected Insights after successful sources
 Repository discovery is prepared automatically when the saved catalogue is stale.
 Notification bulk-read is limited to the selected repository scope, and never
 advances the inbox collection timestamp. See 09 for the precise daily run contract.
+
 - Full refresh updates saved site sources and repository details. Scoped runs contain nine statistics and nine detail steps per included repository plus publication (19 steps for one repository). External analysis publishes separately through the machine API and is not a collection checkpoint. Frozen old cloud AI steps retire while other collection work continues.
 - 首次使用或旧数据升级时先「同步仓库列表」，再「开始刷新」。清单不完整时禁止在界面启动刷新，不能把未扫描的数据当空数组。
 - 各页面仅 GET；缺少快照统一使用 `SnapshotPending` 导航至 `/refresh` 刷新中心。缺账号则前往设置，不混同于缺数据。
@@ -553,6 +559,7 @@ Client 单测：文件顶 `// @vitest-environment happy-dom` 或 vitest 对 `src
 ### 10.2 L3
 
 02 §6 最低三条，本文不可减：
+
 1. 打开 `/settings`，在 PAT 框填 L2 同款 fixture PAT，提交。输入框为空。响应不得在 DOM 留下 PAT。
 2. 在工厂同步清单并全站刷新，随后 `/repos` 仓库列表 **有至少一行**（GitHub stub 仓库为 `octocat/hello-world`）；创建账号本身不触发采集。
 3. 点进该仓详情，概览可见描述或名称。
@@ -570,6 +577,7 @@ L3 依赖步骤 1 的 Origin 补丁。未补丁前不算 L3 绿。L3 **不是** 
 ## 11. 04 / 02 补丁（步骤 1）
 
 编号文档已与本文对齐的部分（Origin 表、insights 源不足、L1 豁免、L3 Origin）在 Sign Off 前写入 01/02/04。步骤 1 只补实现：
+
 1. `origin.ts`：development Access 短路时允许同源 Origin。L1：短路同源 通过；生产拒绝 `http://127.0.0.1:27045`。L2 A/B 仍绿。
 2. insights 派生：alerts 截断/缺失不是源不足；写入 `alerts_incomplete`（03）。仓 403 跳过 → alerts `truncated: true`。改 `collect`/`refresh`/`insights` 并补 L1。
 3. 快照外层 `account_id`；refresh/read/read-all **必填** `account_id`：缺 → 400，错 → 409 且零 GitHub、零 D1。

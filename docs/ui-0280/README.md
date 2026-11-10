@@ -44,11 +44,13 @@ are exercised by `tests/e2e/ui-refresh-review.spec.ts`; the committed selection
 keeps representative evidence rather than every intermediate run.
 
 Supplementary mobile-dark captures cover the lower sections:
+
 - [Token creation and existing-token management](after-settings-tokens-mobile-dark.png)
 - [Factory chart windows and missing-day rendering](after-factory-charts-mobile-dark.png)
 - [Refresh dimensions, reasons and history](after-refresh-details-mobile-dark.png)
 
 Post-rebase semantic regressions have dedicated browser captures:
+
 - [Cancelled account closure without settled collection](after-cancelled-account.png)
 - [Processed dimensions without claiming complete observations](after-settled-dimensions.png)
 

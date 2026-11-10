@@ -191,6 +191,7 @@ reconstruct them. Historical/direct versions and canonical `contentVersion` stay
 
 Skip inference only for an existing valid completed report with matching
 account/scope/canonical repository/domain and a nonempty expected source set:
+
 1. Every expected source must exist in the current index and the report.
 2. When both content hashes exist, compare the entire hashes; unequal hashes
    never fall back to full-version equality.
@@ -207,6 +208,7 @@ Never use a 12-character ID suffix, a null hash or a 304 as completion proof.
 `/agent/{records,reports,jobs}` are generic storage, not execution queues. GET
 requires `agent:read`; POST/PATCH/DELETE require `agent:write`. See the
 [CRUD fields and examples](../../docs/api.md#records-reports-and-jobs).
+
 - Lists return `{account_id,items,nextCursor}` in ID-ascending order, not time
   order. `limit` is 1–100 (default 50); `cursor` is exclusive. Optional `type`,
   `status`, `repository` filters are exact. Follow `nextCursor` to null; there is
@@ -266,6 +268,7 @@ requires Cloudflare Access and the active browser account. A machine bearer does
 not grant access. Machine clients rebuild the newest **3 reports per exact
 `(payload.scope, row.repository, payload.domain)` locally** from the generic
 `GET /api/v1/accounts/:account/agent/reports` list:
+
 - Request `type=github-analysis`, paginate every page, and include all statuses;
   do not filter to completed rows before selecting three. Repository keys are
   case-sensitive and globals normally use null.
