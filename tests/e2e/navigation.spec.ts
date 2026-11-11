@@ -207,7 +207,7 @@ test("group disclosure stays collapsed when another group navigates", async ({ p
 	await expect(overview).toHaveAttribute("aria-expanded", "false");
 	await sidebar.getByRole("link", { name: "Issues", exact: true }).click();
 	await expect(page).toHaveURL(/\/issues$/);
-	await expect(page.getByRole("heading", { name: "Issues", exact: true })).toBeVisible();
+	await expect(page.getByRole("heading", { name: "Issues", exact: true }).first()).toBeVisible();
 	await expect(overview).toHaveAttribute("aria-expanded", "false");
 	expect(writes).toEqual([]);
 });
