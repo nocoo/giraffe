@@ -2,7 +2,7 @@ import {
 	Avatar,
 	AvatarFallback,
 	AvatarImage,
-	Button,
+	Sidebar as BasaltSidebar,
 	CommandEmpty,
 	CommandGroup,
 	CommandInput,
@@ -10,20 +10,26 @@ import {
 	CommandList,
 	CommandPalette,
 	Link,
-	Sidebar,
+	SidebarBrand,
 	SidebarFooter,
 	SidebarGroup,
 	SidebarHeader,
 	SidebarIconItem,
 	SidebarItem,
 	SidebarNav,
+	SidebarProvider,
 	SidebarSearch,
+	SidebarToggle,
 	SidebarUser,
-	Tooltip,
-	TooltipContent,
-	TooltipTrigger,
 	toast,
 } from "@nocoo/basalt";
+import { useSidebar } from "@nocoo/basalt/components/sidebar";
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipProvider,
+	TooltipTrigger,
+} from "@nocoo/basalt/components/tooltip";
 import {
 	Activity,
 	Box,
@@ -33,17 +39,16 @@ import {
 	GitPullRequest,
 	Inbox,
 	type LucideIcon,
-	PanelLeft,
 	RefreshCw,
-	Search,
 	Settings,
 	ShieldAlert,
 	Workflow,
 	Wrench,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { APP_VERSION } from "../../../lib/version";
+import { ACCESS_LOGOUT_URL } from "../../lib/access";
 import { reportError } from "../../lib/error-ui";
 import { initials } from "../../lib/format";
 import { NAV_GROUPS, NAV_ITEMS, paletteItems } from "../../lib/navigation";
@@ -68,36 +73,12 @@ const ICONS: Record<string, LucideIcon> = {
 	Wrench,
 };
 
+const SIDEBAR_COLLAPSED_KEY = "giraffe:sidebar-collapsed";
+type SidebarCollapsedPreference = "false" | "true";
+
 function NavIcon({ name, className }: { name: string; className?: string }) {
 	const Icon = ICONS[name] ?? Box;
-	return <Icon className={className ?? "h-basalt-4 w-basalt-4 shrink-0"} strokeWidth={1.5} />;
-}
-
-function CollapsedNavItem({
-	href,
-	label,
-	icon,
-	active,
-	onNavigate,
-}: {
-	href: string;
-	label: string;
-	icon: string;
-	active: boolean;
-	onNavigate: (href: string) => void;
-}) {
-	return (
-		<Tooltip delayDuration={0}>
-			<TooltipTrigger asChild>
-				<SidebarIconItem active={active} aria-label={label} onClick={() => onNavigate(href)}>
-					<NavIcon name={icon} />
-				</SidebarIconItem>
-			</TooltipTrigger>
-			<TooltipContent side="right" sideOffset={8}>
-				{label}
-			</TooltipContent>
-		</Tooltip>
-	);
+	return <Icon className={className ?? "h-4 w-4 shrink-0"} strokeWidth={1.5} aria-hidden="true" />;
 }
 
 function navActive(pathname: string, href: string): boolean {
@@ -113,20 +94,70 @@ function commandSearchMatches(value: string, query: string) {
 	return tokens.every((token) => normalizedValue.includes(token));
 }
 
-export function AppSidebar({
-	collapsed,
-	onToggle,
+function usePersistedSidebarCollapsed(
+	key: string,
+	defaultValue: SidebarCollapsedPreference,
+): [SidebarCollapsedPreference, (value: SidebarCollapsedPreference) => void] {
+	const [stored, setStored] = useState<SidebarCollapsedPreference>(() => {
+		if (typeof window === "undefined") return defaultValue;
+		const value = localStorage.getItem(key);
+		return value === "true" || value === "false" ? value : defaultValue;
+	});
+
+	const setValue = useCallback(
+		(next: SidebarCollapsedPreference) => {
+			setStored(next);
+			localStorage.setItem(key, next);
+		},
+		[key],
+	);
+
+	return [stored, setValue];
+}
+
+export function PersistedSidebarProvider({ children }: { children: ReactNode }) {
+	const [stored, setStored] = usePersistedSidebarCollapsed(SIDEBAR_COLLAPSED_KEY, "false");
+	const collapsed = stored === "true";
+	const onCollapsedChange = useCallback(
+		(next: boolean) => {
+			setStored(next ? "true" : "false");
+		},
+		[setStored],
+	);
+
+	return (
+		<SidebarProvider collapsed={collapsed} onCollapsedChange={onCollapsedChange} defaultWidth={260}>
+			{children}
+		</SidebarProvider>
+	);
+}
+
+interface SidebarProps {
+	/** Accessible name for the complementary landmark. */
+	ariaLabel: string;
+	variant?: "desktop" | "mobile";
+	onNavigate?: () => void;
+	onDismiss?: () => void;
+}
+
+function GiraffeSidebarBody({
+	variant,
+	onNavigate,
+	onDismiss,
 }: {
-	collapsed: boolean;
-	/** Desktop rail only; the mobile drawer has no collapse step. */
-	onToggle?: () => void;
+	variant?: SidebarProps["variant"];
+	onNavigate?: () => void;
+	onDismiss?: () => void;
 }) {
 	const project = useProjectIdentity("nocoo/giraffe");
 	const { pathname } = useLocation();
 	const navigate = useNavigate();
+	const { collapsed, peek, peeking } = useSidebar();
+	const railCollapsed = collapsed && !(peek && peeking);
 	const [searchOpen, setSearchOpen] = useState(false);
 	const [searchQuery, setSearchQuery] = useState("");
 	const [me, setMe] = useState<MeIdentity | null>(null);
+
 	const handleSearchOpenChange = useCallback((open: boolean) => {
 		setSearchOpen(open);
 		if (!open) {
@@ -195,95 +226,69 @@ export function AppSidebar({
 	);
 
 	const brandTitle = project?.title ?? "Giraffe";
+	const brandLogo = (
+		<Link
+			href="/"
+			aria-label="Giraffe 首页"
+			className="text-basalt-foreground no-underline hover:no-underline"
+		>
+			<BrandMark size={24} alt="" />
+		</Link>
+	);
 
 	return (
-		<Sidebar collapsed={collapsed}>
-			{collapsed ? (
-				<>
-					<SidebarHeader>
-						<Link
-							href="/"
-							aria-label="Giraffe 首页"
-							className="text-basalt-foreground no-underline hover:no-underline"
-						>
-							<BrandMark />
-						</Link>
-					</SidebarHeader>
-					<Button variant="ghost" size="icon" onClick={() => onToggle?.()} aria-label="展开侧栏">
-						<PanelLeft aria-hidden="true" />
-					</Button>
-					<SidebarNav>
-						<Tooltip delayDuration={0}>
-							<TooltipTrigger asChild>
-								<SidebarIconItem
-									data-sidebar-search-trigger="true"
-									onClick={openSearch}
-									aria-label="搜索 (⌘K)"
-								>
-									<Search className="h-basalt-4 w-basalt-4" strokeWidth={1.5} aria-hidden="true" />
-								</SidebarIconItem>
-							</TooltipTrigger>
-							<TooltipContent side="right" sideOffset={8}>
-								搜索 (⌘K)
-							</TooltipContent>
-						</Tooltip>
-						{NAV_ITEMS.map((item) => (
-							<CollapsedNavItem
-								key={item.href}
-								href={item.href}
-								label={item.label}
-								icon={item.icon}
-								active={navActive(pathname, item.href)}
-								onNavigate={navigate}
+		<>
+			<SidebarHeader>
+				<SidebarBrand
+					logo={brandLogo}
+					name={brandTitle}
+					version={`v${APP_VERSION}`}
+					action={
+						variant === "mobile" ? (
+							<SidebarToggle
+								mode="dismiss"
+								dismissLabel="关闭导航菜单"
+								{...(onDismiss ? { onDismiss } : {})}
 							/>
-						))}
-					</SidebarNav>
-					<SidebarFooter>
-						<Tooltip delayDuration={0}>
-							<TooltipTrigger asChild>{avatar}</TooltipTrigger>
-							<TooltipContent side="right" sideOffset={8}>
-								{name}
-							</TooltipContent>
-						</Tooltip>
-					</SidebarFooter>
-				</>
-			) : (
-				<>
-					<SidebarHeader>
-						<div className="flex w-full items-center justify-between">
-							<Link
-								href="/"
-								aria-label="Giraffe 首页"
-								className="flex min-w-0 items-center gap-basalt-space-lg text-basalt-foreground no-underline hover:no-underline"
-							>
-								<BrandMark />
-								<span className="truncate text-lg font-semibold text-basalt-foreground md:text-xl">
-									{brandTitle}
-								</span>
-								<span className="shrink-0 rounded-basalt-md bg-basalt-secondary px-basalt-space-md py-basalt-space-xs font-mono text-basalt-xs leading-basalt-tight font-medium text-basalt-muted-foreground">
-									v{APP_VERSION}
-								</span>
-							</Link>
-							{onToggle ? (
-								<Button variant="ghost" size="icon" onClick={onToggle} aria-label="折叠侧栏">
-									<PanelLeft aria-hidden="true" />
-								</Button>
-							) : null}
-						</div>
-					</SidebarHeader>
-					<div className="px-basalt-nav-inset">
-						<SidebarSearch data-sidebar-search-trigger="true" onClick={openSearch}>
-							搜索
-						</SidebarSearch>
-					</div>
-					<SidebarNav>
-						{NAV_GROUPS.map((group) => (
-							<SidebarGroup key={group.label} label={group.label} defaultOpen>
+						) : (
+							<SidebarToggle expandLabel="展开侧栏" collapseLabel="折叠侧栏" />
+						)
+					}
+				/>
+			</SidebarHeader>
+			<SidebarNav aria-label="主导航">
+				<SidebarSearch shortcut="⌘K" data-sidebar-search-trigger="true" onClick={openSearch}>
+					搜索
+				</SidebarSearch>
+				{railCollapsed
+					? NAV_ITEMS.map((item) => {
+							const active = navActive(pathname, item.href);
+							return (
+								<Tooltip key={item.href} delayDuration={0}>
+									<TooltipTrigger asChild>
+										<SidebarIconItem
+											href={item.href}
+											active={active}
+											aria-label={item.label}
+											onClick={onNavigate}
+										>
+											<NavIcon name={item.icon} />
+										</SidebarIconItem>
+									</TooltipTrigger>
+									<TooltipContent side="right" sideOffset={8}>
+										{item.label}
+									</TooltipContent>
+								</Tooltip>
+							);
+						})
+					: NAV_GROUPS.map((group) => (
+							<SidebarGroup key={group.label} label={group.label}>
 								{group.items.map((item) => (
 									<SidebarItem
 										key={item.href}
+										href={item.href}
 										active={navActive(pathname, item.href)}
-										onClick={() => navigate(item.href)}
+										onClick={onNavigate}
 									>
 										<NavIcon name={item.icon} />
 										<span className="flex-1 truncate text-left">{item.label}</span>
@@ -291,12 +296,17 @@ export function AppSidebar({
 								))}
 							</SidebarGroup>
 						))}
-					</SidebarNav>
-					<SidebarFooter>
-						<SidebarUser name={name} email={email} avatar={avatar} />
-					</SidebarFooter>
-				</>
-			)}
+			</SidebarNav>
+			<SidebarFooter>
+				<SidebarUser
+					name={name}
+					email={email}
+					avatar={avatar}
+					tooltip={name}
+					signOutHref={ACCESS_LOGOUT_URL}
+					signOutLabel="退出登录"
+				/>
+			</SidebarFooter>
 			<CommandPalette open={searchOpen} onOpenChange={handleSearchOpenChange} shouldFilter={false}>
 				<CommandInput
 					placeholder="搜索页面或仓库"
@@ -339,6 +349,25 @@ export function AppSidebar({
 					) : null}
 				</CommandList>
 			</CommandPalette>
-		</Sidebar>
+		</>
+	);
+}
+
+export function AppSidebar({
+	ariaLabel,
+	variant = "desktop",
+	onNavigate,
+	onDismiss,
+}: SidebarProps) {
+	return (
+		<TooltipProvider delayDuration={0}>
+			<BasaltSidebar aria-label={ariaLabel} resizable={false}>
+				<GiraffeSidebarBody
+					variant={variant}
+					{...(onNavigate ? { onNavigate } : {})}
+					{...(onDismiss ? { onDismiss } : {})}
+				/>
+			</BasaltSidebar>
+		</TooltipProvider>
 	);
 }
