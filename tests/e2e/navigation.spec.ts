@@ -18,12 +18,12 @@ async function waitForReposRouteSettled(page: Page, width: number) {
 	if (width === 1440) {
 		await expect(sidebar.getByRole("button", { name: "展开侧栏" })).toBeVisible();
 		await expect(sidebar.getByRole("button", { name: /搜索/ })).toBeVisible();
-		await expect(sidebar.getByRole("button", { name: "仓库", exact: true })).toHaveAttribute(
+		await expect(sidebar.getByRole("link", { name: "仓库", exact: true })).toHaveAttribute(
 			"aria-current",
 			"page",
 		);
 	} else {
-		await expect(page.getByRole("dialog", { name: "打开导航" })).toBeHidden();
+		await expect(page.getByRole("dialog", { name: "导航菜单" })).toBeHidden();
 	}
 	await page.evaluate(
 		() =>
@@ -66,31 +66,31 @@ for (const width of [1440, 390]) {
 			if (width === 390) await page.getByRole("button", { name: "打开导航" }).click();
 			const sidebar = page.getByRole("complementary");
 			const nav = sidebar.getByRole("navigation");
-			await expect(nav.locator("button:not([aria-expanded])").first()).toHaveText("软件工厂");
+			await expect(nav.locator("a[data-sidebar-row]").first()).toHaveText("软件工厂");
 			await expect(nav.locator("[aria-current=page]")).toHaveText("软件工厂");
 			await expect(nav.locator("button[aria-expanded]")).toHaveText(
 				NAV_GROUPS.map((group) => group.label),
 			);
 			const overviewToggle = nav.getByRole("button", { name: "总览", exact: true });
 			const overview = page.locator(`[id="${await overviewToggle.getAttribute("aria-controls")}"]`);
-			await expect(overview.getByRole("button")).toHaveText(["软件工厂", "今日活动", "Insights"]);
+			await expect(overview.getByRole("link")).toHaveText(["软件工厂", "今日活动", "Insights"]);
 			await expect(nav.getByRole("button", { name: "AI", exact: true })).toHaveCount(0);
 			await expect(nav.getByRole("button", { name: "分析台", exact: true })).toHaveCount(0);
-			await expect(nav.getByRole("button", { name: "刷新中心", exact: true })).toHaveCount(1);
+			await expect(nav.getByRole("link", { name: "刷新中心", exact: true })).toHaveCount(1);
 			await expect(nav.getByRole("button", { name: "Agent", exact: true })).toHaveCount(0);
 			await overviewToggle.click();
 			await expect(overviewToggle).toHaveAttribute("aria-expanded", "false");
-			await expect(overview.getByRole("button", { name: "Insights", exact: true })).toBeHidden();
+			await expect(overview.getByRole("link", { name: "Insights", exact: true })).toBeHidden();
 			await overviewToggle.focus();
 			await page.keyboard.press("Enter");
 			await expect(overviewToggle).toHaveAttribute("aria-expanded", "true");
-			await expect(overview.getByRole("button", { name: "Insights", exact: true })).toBeVisible();
+			await expect(overview.getByRole("link", { name: "Insights", exact: true })).toBeVisible();
 			const home = sidebar.getByRole("link", { name: "Giraffe 首页" });
 			await expect(home).toHaveAttribute("href", "/");
-			await expect(home.getByText(`v${APP_VERSION}`, { exact: true })).toBeVisible();
+			await expect(sidebar.getByText(`v${APP_VERSION}`, { exact: true })).toBeVisible();
 			await expect(sidebar.getByText(`v${APP_VERSION}`, { exact: true })).toHaveCount(1);
 			const expandedLogo = await home.locator("img").boundingBox();
-			expect(expandedLogo?.width).toBe(28);
+			expect(expandedLogo?.width).toBe(24);
 			const headerNode = await page.locator("[data-basalt-header]").elementHandle();
 			const mainNode = await page.locator("main").elementHandle();
 			const sidebarNode = width === 1440 ? await sidebar.elementHandle() : null;
@@ -103,7 +103,7 @@ for (const width of [1440, 390]) {
 				["Insights", "/insights"],
 				["仓库", "/repos"],
 			] as const) {
-				await nav.getByRole("button", { name: label, exact: true }).click();
+				await nav.getByRole("link", { name: label, exact: true }).click();
 				await expect(page).toHaveURL(new RegExp(`${path}$`));
 				await expect(page.getByRole("heading", { name: label, exact: true })).toBeVisible();
 				expect(
@@ -115,7 +115,7 @@ for (const width of [1440, 390]) {
 					true,
 				);
 				if (width === 390) {
-					await expect(page.getByRole("dialog", { name: "打开导航" })).toBeHidden();
+					await expect(page.getByRole("dialog", { name: "导航菜单" })).toBeHidden();
 					await page.getByRole("button", { name: "打开导航" }).click();
 				}
 				await expect(nav.locator("[aria-current=page]")).toHaveText(label);
@@ -134,7 +134,7 @@ for (const width of [1440, 390]) {
 				.click();
 			await expect(page).toHaveURL(/\/repos\/octocat\/hello-world$/);
 			if (width === 1440) {
-				await expect(nav.getByRole("button", { name: "仓库", exact: true })).toHaveAttribute(
+				await expect(nav.getByRole("link", { name: "仓库", exact: true })).toHaveAttribute(
 					"aria-current",
 					"page",
 				);
@@ -197,10 +197,36 @@ test("group disclosure stays collapsed when another group navigates", async ({ p
 	const overview = sidebar.getByRole("button", { name: "总览", exact: true });
 	await overview.click();
 	await expect(overview).toHaveAttribute("aria-expanded", "false");
-	await sidebar.getByRole("button", { name: "Issues", exact: true }).click();
+	await sidebar.getByRole("link", { name: "Issues", exact: true }).click();
 	await expect(page).toHaveURL(/\/issues$/);
 	await expect(page.getByRole("heading", { name: "Issues", exact: true })).toBeVisible();
 	await expect(overview).toHaveAttribute("aria-expanded", "false");
+	expect(writes).toEqual([]);
+});
+
+test("expanded sidebar exposes Cloudflare Access sign-out", async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	const writes: string[] = [];
+	await stubApi(page, createUiFixtures(), writes);
+	await gotoAndWaitForSidebar(page, "/repos");
+	const sidebar = page.getByRole("complementary");
+	const signOut = sidebar.getByRole("link", { name: "退出登录" });
+	await expect(signOut).toHaveAttribute("href", "/cdn-cgi/access/logout");
+	expect(writes).toEqual([]);
+});
+
+test("mobile drawer closes from the sidebar dismiss control", async ({ page }) => {
+	await page.setViewportSize({ width: 390, height: 900 });
+	const writes: string[] = [];
+	await stubApi(page, createUiFixtures(), writes);
+	await page.goto("/repos");
+	const opener = page.getByRole("button", { name: "打开导航" });
+	await opener.click();
+	const drawer = page.getByRole("dialog", { name: "导航菜单" });
+	await expect(drawer).toBeVisible();
+	await drawer.getByRole("button", { name: "关闭导航菜单" }).click();
+	await expect(drawer).toBeHidden();
+	await expect(opener).toBeFocused();
 	expect(writes).toEqual([]);
 });
 
@@ -214,7 +240,7 @@ test("mobile navigation restores focus and closes across the desktop breakpoint"
 	await expect(page.getByRole("heading", { name: "仓库", exact: true }).first()).toBeVisible();
 	const opener = page.getByRole("button", { name: "打开导航" });
 	await opener.click();
-	const drawer = page.getByRole("dialog", { name: "打开导航" });
+	const drawer = page.getByRole("dialog", { name: "导航菜单" });
 	await expect(drawer).toBeVisible();
 	await page.keyboard.press("Escape");
 	await expect(drawer).toBeHidden();
