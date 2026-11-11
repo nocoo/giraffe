@@ -155,7 +155,11 @@ test("one header clock shows saved source times without retired refresh records"
 	await expect(dialog).toContainText("部分数据仍来自较早的刷新");
 	await page.keyboard.press("Escape");
 	await expect(trigger).toBeFocused();
-	await page.getByRole("button", { name: "仓库", exact: true }).click();
+	await page
+		.getByRole("complementary")
+		.getByRole("navigation")
+		.getByRole("link", { name: "仓库", exact: true })
+		.click();
 	await trigger.click();
 	await expect(dialog).toContainText("仓库列表");
 	await expect(dialog).not.toContainText("Issues");

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { LinkProvider, TooltipProvider } from "@nocoo/basalt";
+import { LinkProvider, SidebarProvider, TooltipProvider } from "@nocoo/basalt";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it, vi } from "vitest";
@@ -16,7 +16,9 @@ function sidebar(collapsed = false, path = "/factory") {
 		<MemoryRouter initialEntries={[path]}>
 			<LinkProvider render={RouterLink}>
 				<TooltipProvider>
-					<AppSidebar collapsed={collapsed} onToggle={() => {}} />
+					<SidebarProvider collapsed={collapsed} defaultWidth={260}>
+						<AppSidebar ariaLabel="主导航" />
+					</SidebarProvider>
 				</TooltipProvider>
 			</LinkProvider>
 		</MemoryRouter>,
@@ -34,7 +36,7 @@ describe("Basalt sidebar composition", () => {
 			]),
 		).toEqual(NAV_GROUPS.map((group) => [group.label, "true"]));
 		expect(
-			Array.from(nav?.querySelectorAll("button:not([aria-expanded])") ?? [], (node) =>
+			Array.from(nav?.querySelectorAll("a[data-sidebar-row]") ?? [], (node) =>
 				node.textContent?.trim(),
 			),
 		).toEqual(NAV_ITEMS.map((item) => item.label));
@@ -44,20 +46,30 @@ describe("Basalt sidebar composition", () => {
 		const container = sidebar();
 		const home = container.querySelector('a[aria-label="Giraffe 首页"]');
 		expect(home?.getAttribute("href")).toBe("/");
-		expect(home?.querySelector("img")?.getAttribute("width")).toBe("28");
-		expect(home?.textContent).toBe(`Giraffev${APP_VERSION}`);
+		expect(home?.querySelector("img")?.getAttribute("width")).toBe("24");
+		expect(container.querySelector('[data-slot="sidebar-brand-name"]')?.textContent).toBe(
+			"Giraffe",
+		);
 		expect(container.textContent?.match(new RegExp(`v${APP_VERSION}`, "g"))).toHaveLength(1);
 	});
 
 	it("uses the centered collapsed rail with search inside navigation", () => {
 		const container = sidebar(true, "/repos/octocat/hello-world");
-		expect(container.querySelector('a[aria-label="Giraffe 首页"]')?.textContent).toBe("");
-		expect(container.textContent).not.toContain(`v${APP_VERSION}`);
+		expect(container.querySelector("aside")?.getAttribute("data-collapsed")).toBe("");
 		const nav = container.querySelector("nav");
-		expect(nav?.querySelector("button")?.getAttribute("aria-label")).toBe("搜索 (⌘K)");
-		expect(nav?.querySelector('[aria-current="page"]')?.getAttribute("aria-label")).toBe("仓库");
+		const search = nav?.querySelector('[data-slot="sidebar-search"]');
+		expect(search?.getAttribute("aria-label") ?? search?.textContent).toContain("搜索");
+		const current = nav?.querySelector('[aria-current="page"]');
+		expect(current?.getAttribute("aria-label") ?? current?.textContent?.trim()).toBe("仓库");
+		const rows = nav?.querySelectorAll("button,a[data-sidebar-row]") ?? [];
 		expect(
-			Array.from(nav?.querySelectorAll("button") ?? [], (node) => node.getAttribute("aria-label")),
+			Array.from(rows, (node) => node.getAttribute("aria-label") ?? node.textContent?.trim()),
 		).toEqual(["搜索 (⌘K)", ...NAV_ITEMS.map((item) => item.label)]);
+	});
+
+	it("wires Cloudflare Access sign-out on the expanded footer", () => {
+		const signOut = sidebar().querySelector('[data-slot="sidebar-user-sign-out"]');
+		expect(signOut?.getAttribute("href")).toBe("/cdn-cgi/access/logout");
+		expect(signOut?.getAttribute("aria-label")).toBe("退出登录");
 	});
 });

@@ -44,7 +44,7 @@ test("today empty window is saved evidence, not a collection request", async ({ 
 	await expect(page.getByTestId("activity-merged")).toContainText("窗口内没有记录");
 	await expect(page.getByRole("group", { name: "仓库范围", exact: true })).toHaveCount(0);
 	await expect(
-		page.getByRole("complementary").getByRole("button", { name: "今日活动", exact: true }),
+		page.getByRole("complementary").getByRole("link", { name: "今日活动", exact: true }),
 	).toHaveAttribute("aria-current", "page");
 	await expect(page.getByTestId("activity-contributions")).toContainText("2026-10-22");
 	await expect(page.getByTestId("activity-contributions")).toContainText("当天未结束");

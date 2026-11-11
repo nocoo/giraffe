@@ -1,27 +1,34 @@
-import { Button, ContentIsland, Sheet, SheetContent, SheetTitle } from "@nocoo/basalt";
-import { AppHeader } from "@nocoo/basalt/components/app-header";
+import { ContentIsland } from "@nocoo/basalt";
+import { AppHeader, AppHeaderMenuButton, ProjectLinks } from "@nocoo/basalt/components/app-header";
 import { AppMain, AppSkipLink, AppShell as Shell } from "@nocoo/basalt/components/app-shell";
 import { Banner } from "@nocoo/basalt/components/banner";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
-import { useTheme } from "@nocoo/basalt/providers/theme";
-import { Menu, ShieldAlert } from "lucide-react";
+import {
+	Sheet,
+	SheetContent,
+	SheetDescription,
+	SheetHeader,
+	SheetTitle,
+} from "@nocoo/basalt/components/sheet";
+import { SidebarProvider } from "@nocoo/basalt/components/sidebar";
+import { ThemeToggle } from "@nocoo/basalt/components/theme-toggle";
+import { ShieldAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import { subscribeErrorUi } from "../../lib/error-ui";
-import { documentTitle, headerCrumbs, headerTitle } from "../../lib/navigation";
-import { AppSidebar } from "./app-sidebar";
+import { breadcrumbsFor, documentTitle, headerTitle } from "../../lib/navigation";
+import { AppSidebar, PersistedSidebarProvider } from "./app-sidebar";
 import { DataTimeControl, DataTimeProvider } from "./data-time";
 import { EmptyState } from "./empty-state";
 import { EnvironmentSwitch } from "./environment-switch";
-import { GithubRepoLink, HeaderTooltip, HexlyLink } from "./header-links";
+import { MobileNavProvider, useMobileNav } from "./mobile-nav-context";
 import { RefreshControl } from "./refresh-control";
 import { useRepositoryScope } from "./repository-scope";
-import { ThemeToggle } from "./theme-toggle";
 import { useIsMobile } from "./use-mobile";
 import { useProjectIdentity } from "./use-project-identity";
 
-export function AppShell() {
+function AppShellInner() {
 	const project = useProjectIdentity("nocoo/giraffe");
 	useEffect(() => {
 		if (!project) return;
@@ -42,19 +49,28 @@ export function AppShell() {
 			};
 		}
 	}, [project]);
-	const [collapsed, setCollapsed] = useState(false);
+
 	const isMobile = useIsMobile();
-	const [mobileOpen, setMobileOpen] = useState(false);
-	const mobileTriggerRef = useRef<HTMLButtonElement>(null);
+	const { mobileOpen, setMobileOpen } = useMobileNav();
+	const menuButton = useRef<HTMLButtonElement>(null);
 	const location = useLocation();
+
 	useEffect(() => {
 		document.title = documentTitle(location.pathname);
 	}, [location.pathname]);
+
+	// Close mobile sidebar on route change: pathname is the intentional trigger.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: pathname is the trigger, not a value used inside
+	useEffect(() => {
+		setMobileOpen(false);
+	}, [location.pathname]);
+
+	useEffect(() => {
+		if (!isMobile) setMobileOpen(false);
+	}, [isMobile, setMobileOpen]);
+
 	const scope = useRepositoryScope();
 	const navigate = useNavigate();
-	const { theme } = useTheme();
-	const title = headerTitle(location.pathname);
-	const crumbs = headerCrumbs(location.pathname);
 	const [accessDenied, setAccessDenied] = useState(false);
 	const [accountMissing, setAccountMissing] = useState(false);
 
@@ -73,33 +89,49 @@ export function AppShell() {
 		});
 	}, []);
 
-	// Close mobile sidebar on route change: pathname is the intentional trigger.
-	// biome-ignore lint/correctness/useExhaustiveDependencies: pathname is the trigger, not a value used inside
-	useEffect(() => {
-		setMobileOpen(false);
-	}, [location.pathname]);
-
-	useEffect(() => {
-		if (!isMobile) setMobileOpen(false);
-	}, [isMobile]);
+	function appHeaderBreadcrumbs(pathname: string) {
+		const crumbs = breadcrumbsFor(pathname);
+		const trail: { href?: string; label: string }[] = [{ label: "Giraffe", href: "/" }];
+		if (crumbs.length > 1) {
+			trail.push(...crumbs.slice(0, -1));
+		}
+		trail.push({ label: headerTitle(pathname) });
+		return trail;
+	}
+	const breadcrumbs = isMobile
+		? appHeaderBreadcrumbs(location.pathname).slice(-1)
+		: appHeaderBreadcrumbs(location.pathname);
 
 	return (
 		<Shell>
 			<AppSkipLink>跳到主内容</AppSkipLink>
 			{!isMobile ? (
-				<AppSidebar collapsed={collapsed} onToggle={() => setCollapsed((value) => !value)} />
+				<PersistedSidebarProvider>
+					<AppSidebar ariaLabel="主导航" />
+				</PersistedSidebarProvider>
 			) : (
 				<Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
 					<SheetContent
+						id="mobile-navigation-sheet"
 						side="left"
+						className="w-[260px] max-w-[260px] border-0 bg-basalt-background p-0 sm:max-w-[260px] sm:p-0"
 						onCloseAutoFocus={(event) => {
 							event.preventDefault();
-							mobileTriggerRef.current?.focus();
+							menuButton.current?.focus();
 						}}
-						className="w-[260px] max-w-[260px] border-0 bg-basalt-background p-0"
 					>
-						<SheetTitle className="sr-only">打开导航</SheetTitle>
-						<AppSidebar collapsed={false} />
+						<SheetHeader className="sr-only">
+							<SheetTitle>导航菜单</SheetTitle>
+							<SheetDescription>浏览 Giraffe 的主要页面</SheetDescription>
+						</SheetHeader>
+						<SidebarProvider collapsed={false} defaultWidth={260}>
+							<AppSidebar
+								ariaLabel="主导航抽屉"
+								variant="mobile"
+								onNavigate={() => setMobileOpen(false)}
+								onDismiss={() => setMobileOpen(false)}
+							/>
+						</SidebarProvider>
 					</SheetContent>
 				</Sheet>
 			)}
@@ -108,21 +140,18 @@ export function AppShell() {
 					<AppHeader
 						leading={
 							isMobile ? (
-								<HeaderTooltip label="打开导航">
-									<Button
-										ref={mobileTriggerRef}
-										variant="ghost"
-										size="icon"
-										onClick={() => setMobileOpen(true)}
-										aria-label="打开导航"
-									>
-										<Menu aria-hidden="true" />
-									</Button>
-								</HeaderTooltip>
+								<AppHeaderMenuButton
+									ref={menuButton}
+									label="打开导航"
+									aria-expanded={mobileOpen}
+									aria-haspopup="dialog"
+									aria-controls={mobileOpen ? "mobile-navigation-sheet" : undefined}
+									onClick={() => setMobileOpen(true)}
+								/>
 							) : null
 						}
-						breadcrumbs={crumbs}
-						title={title}
+						breadcrumbs={breadcrumbs}
+						breadcrumbsLabel="面包屑导航"
 						actions={
 							<>
 								<EnvironmentSwitch />
@@ -130,9 +159,20 @@ export function AppShell() {
 								{location.pathname !== "/settings" ? (
 									<DataTimeControl key={`${location.pathname}:${scope}`} />
 								) : null}
-								{!isMobile ? <GithubRepoLink /> : null}
-								{!isMobile && <HexlyLink />}
-								<ThemeToggle aria-label={`切换主题（当前 ${theme}）`} />
+								<ProjectLinks
+									github="nocoo/giraffe"
+									hexly="giraffe"
+									name="Giraffe"
+									githubLabel="GitHub repository"
+									hexlyLabel="Giraffe on hexly.ai"
+								/>
+								<ThemeToggle
+									labels={{
+										light: "切换为浅色主题",
+										dark: "切换为深色主题",
+										system: "跟随系统主题",
+									}}
+								/>
 							</>
 						}
 					/>
@@ -176,5 +216,13 @@ export function AppShell() {
 				</AppMain>
 			</DataTimeProvider>
 		</Shell>
+	);
+}
+
+export function AppShell() {
+	return (
+		<MobileNavProvider>
+			<AppShellInner />
+		</MobileNavProvider>
 	);
 }

@@ -86,10 +86,7 @@ test("Basalt card typography is consistent across factory, insights and reposito
 			"18px",
 		);
 	}
-	await expect(page.getByText(`v${APP_VERSION}`, { exact: true })).toHaveCSS(
-		"font-family",
-		/monospace/,
-	);
+	await expect(page.locator('[data-slot="sidebar-brand-version"]')).toHaveText(`v${APP_VERSION}`);
 	await page.goto("/repos/octocat/hello-world");
 	await page.getByRole("tab", { name: "流量", exact: true }).click();
 	await expect(page.getByRole("heading", { name: "浏览趋势", exact: true })).toHaveCSS(
@@ -402,10 +399,10 @@ test("calendar edge cells keep selection and keyboard focus inside the grid", as
 });
 
 for (const [chart, values] of [
-	["PR 流量与存量", ["新开9", "合并6", "未合并关闭 ↓3", "日终 open无法倒推"]],
-	["Issue 流量与存量", ["新开6", "关闭3", "日终 open无法倒推"]],
-	["提交产出与覆盖面", ["提交≥ 36", "7 日活跃仓库—"]],
-	["交付吞吐", ["合并 PR6", "Release3", "CI 7 日成功率85.7%"]],
+	["PR 流量与存量", ["新开 9", "合并 6", "未合并关闭 ↓ 3", "日终 open 无法倒推"]],
+	["Issue 流量与存量", ["新开 6", "关闭 3", "日终 open 无法倒推"]],
+	["提交产出与覆盖面", ["提交 ≥ 36", "7 日活跃仓库 —"]],
+	["交付吞吐", ["合并 PR 6", "Release 3", "CI 7 日成功率 85.7%"]],
 ] as const) {
 	test(`${chart} tooltip displays daily values and leaves the page usable`, async ({ page }) => {
 		const errors: string[] = [];
