@@ -6,7 +6,7 @@
 		"build": "bun --cwd ../.. run build"
 	},
 	"dependencies": {
-		"@nocoo/basalt": "3.2.1",
+		"@nocoo/basalt": "3.3.1",
 		"hono": "^4.13.17",
 		"lucide-react": "1.70.0",
 		"react": "^19.3.1",
