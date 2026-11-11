@@ -125,7 +125,7 @@ for (const width of [1440, 390]) {
 			else await sidebar.getByRole("button", { name: "折叠侧栏" }).click();
 			if (width === 1440) {
 				await expect(home.locator("img")).toBeVisible();
-				await expect(sidebar.getByText(`v${APP_VERSION}`, { exact: true })).toHaveCount(0);
+				await expect(sidebar.locator('[data-slot="sidebar-brand-name"]')).toBeHidden();
 				await expect(nav.getByRole("button").first()).toHaveAccessibleName("搜索 (⌘K)");
 			}
 			await page
@@ -139,7 +139,15 @@ for (const width of [1440, 390]) {
 					"page",
 				);
 			}
-			await page.locator("header").getByRole("link", { name: "仓库", exact: true }).click();
+			if (width === 1440) {
+				await page
+					.getByRole("navigation", { name: "面包屑导航" })
+					.getByRole("link", { name: "仓库", exact: true })
+					.click();
+			} else {
+				await page.getByRole("button", { name: "打开导航" }).click();
+				await nav.getByRole("link", { name: "仓库", exact: true }).click();
+			}
 			await waitForReposRouteSettled(page, width);
 			expect(documents).toEqual([]);
 			if (width === 1440) {

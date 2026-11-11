@@ -29,7 +29,9 @@ test("a fresh account keeps missing dashboard data until refresh is explicitly s
 	await page.keyboard.press("Escape");
 	await expect(page.getByText("暂无已保存的快照", { exact: true })).toBeVisible();
 	await expect(page.getByText(/旧刷新已停用/)).toHaveCount(0);
-	await expect(page.getByRole("link", { name: /去刷新|刷新中心/ })).toHaveCount(0);
+	await expect(page.getByRole("main").getByRole("link", { name: /去刷新|刷新中心/ })).toHaveCount(
+		0,
+	);
 	for (const title of [
 		"变化 · 暂无观测窗口",
 		"提交产出与覆盖面",
