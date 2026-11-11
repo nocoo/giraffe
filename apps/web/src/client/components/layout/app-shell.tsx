@@ -17,7 +17,7 @@ import { ShieldAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import { subscribeErrorUi } from "../../lib/error-ui";
-import { breadcrumbsFor, documentTitle } from "../../lib/navigation";
+import { breadcrumbsFor, documentTitle, headerTitle } from "../../lib/navigation";
 import { AppSidebar, PersistedSidebarProvider } from "./app-sidebar";
 import { DataTimeControl, DataTimeProvider } from "./data-time";
 import { EmptyState } from "./empty-state";
@@ -89,8 +89,18 @@ function AppShellInner() {
 		});
 	}, []);
 
-	const allBreadcrumbs = [{ label: "Giraffe", href: "/" }, ...breadcrumbsFor(location.pathname)];
-	const breadcrumbs = isMobile ? allBreadcrumbs.slice(-1) : allBreadcrumbs;
+	function appHeaderBreadcrumbs(pathname: string) {
+		const crumbs = breadcrumbsFor(pathname);
+		const trail: { href?: string; label: string }[] = [{ label: "Giraffe", href: "/" }];
+		if (crumbs.length > 1) {
+			trail.push(...crumbs.slice(0, -1));
+		}
+		trail.push({ label: headerTitle(pathname) });
+		return trail;
+	}
+	const breadcrumbs = isMobile
+		? appHeaderBreadcrumbs(location.pathname).slice(-1)
+		: appHeaderBreadcrumbs(location.pathname);
 
 	return (
 		<Shell>
