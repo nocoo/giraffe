@@ -4,17 +4,10 @@ import { AppMain, AppSkipLink, AppShell as Shell } from "@nocoo/basalt/component
 import { Banner } from "@nocoo/basalt/components/banner";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
-import {
-	Sheet,
-	SheetContent,
-	SheetDescription,
-	SheetHeader,
-	SheetTitle,
-} from "@nocoo/basalt/components/sheet";
-import { SidebarProvider } from "@nocoo/basalt/components/sidebar";
+import { SidebarDrawer } from "@nocoo/basalt/components/sidebar";
 import { ThemeToggle } from "@nocoo/basalt/components/theme-toggle";
 import { ShieldAlert } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import { subscribeErrorUi } from "../../lib/error-ui";
 import { breadcrumbsFor, documentTitle, headerTitle } from "../../lib/navigation";
@@ -53,6 +46,7 @@ function AppShellInner() {
 	const isMobile = useIsMobile();
 	const { mobileOpen, setMobileOpen } = useMobileNav();
 	const menuButton = useRef<HTMLButtonElement>(null);
+	const drawerId = useId();
 	const location = useLocation();
 
 	useEffect(() => {
@@ -110,30 +104,21 @@ function AppShellInner() {
 					<AppSidebar ariaLabel="主导航" />
 				</PersistedSidebarProvider>
 			) : (
-				<Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-					<SheetContent
-						id="mobile-navigation-sheet"
-						side="left"
-						className="w-[260px] max-w-[260px] border-0 bg-basalt-background p-0 sm:max-w-[260px] sm:p-0"
-						onCloseAutoFocus={(event) => {
-							event.preventDefault();
-							menuButton.current?.focus();
-						}}
-					>
-						<SheetHeader className="sr-only">
-							<SheetTitle>导航菜单</SheetTitle>
-							<SheetDescription>浏览 Giraffe 的主要页面</SheetDescription>
-						</SheetHeader>
-						<SidebarProvider collapsed={false} defaultWidth={260}>
-							<AppSidebar
-								ariaLabel="主导航抽屉"
-								variant="mobile"
-								onNavigate={() => setMobileOpen(false)}
-								onDismiss={() => setMobileOpen(false)}
-							/>
-						</SidebarProvider>
-					</SheetContent>
-				</Sheet>
+				<SidebarDrawer
+					id={drawerId}
+					open={mobileOpen}
+					onOpenChange={setMobileOpen}
+					returnFocusRef={menuButton}
+					title="导航菜单"
+					description="浏览 Giraffe 的主要页面"
+				>
+					<AppSidebar
+						ariaLabel="主导航抽屉"
+						variant="mobile"
+						onNavigate={() => setMobileOpen(false)}
+						onDismiss={() => setMobileOpen(false)}
+					/>
+				</SidebarDrawer>
 			)}
 			<DataTimeProvider scope={`${location.pathname}:${scope}`}>
 				<AppMain tabIndex={-1}>
@@ -145,7 +130,7 @@ function AppShellInner() {
 									label="打开导航"
 									aria-expanded={mobileOpen}
 									aria-haspopup="dialog"
-									aria-controls={mobileOpen ? "mobile-navigation-sheet" : undefined}
+									aria-controls={drawerId}
 									onClick={() => setMobileOpen(true)}
 								/>
 							) : null
