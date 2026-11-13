@@ -1,5 +1,20 @@
 # Retrospective
 
+## 2026-11-14 - Separate painted visibility from modal accessibility queries
+
+The Basalt upgrade probe initially treated a version badge's nonzero child box
+and Playwright visibility result as proof that it was painted. Its parent brand
+copy actually had zero width with clipped overflow, and the screenshot showed
+neither name nor version. Report clipping-aware evidence, not a child's display
+property alone; the regression checks the collapsed brand-copy boundary.
+
+The first new mobile geometry tests also queried the menu opener through the
+accessible role tree while the modal drawer was open. Radix correctly hides the
+background from that tree. Use `includeHidden` only to inspect the opener's
+`aria-controls` relationship during the modal state; keep normal rendered focus,
+Escape and navigation assertions. The corrected full navigation run passed all
+15 cases without changing application behavior or suppressing tests.
+
 ## 2026-10-29 - Recheck UI evidence after runner integration
 
 Rebasing the UI onto 0.27.3 produced no client conflicts, and the existing tests
