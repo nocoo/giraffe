@@ -175,6 +175,73 @@ for (const width of [1440, 390]) {
 	}
 }
 
+for (const width of [1440, 390, 640]) {
+	for (const theme of ["light", "dark"] as const) {
+		test(`sidebar geometry and keyboard restoration at ${width}px in ${theme}`, async ({
+			page,
+		}) => {
+			await page.setViewportSize({ width, height: 900 });
+			await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
+			const writes: string[] = [];
+			await stubApi(page, createUiFixtures(), writes);
+			await gotoAndWaitForSidebar(page, "/repos");
+			const opener = page.getByRole("button", {
+				name: "打开导航",
+				exact: true,
+				includeHidden: true,
+			});
+			if (width < 768) await opener.click();
+			const sidebar = page.getByRole("complementary");
+			await expect(sidebar).toHaveCSS("width", "260px");
+			const avatar = sidebar.locator('[data-slot="sidebar-user"] > span');
+			await expect(avatar).toHaveCSS("width", "36px");
+			await expect(avatar).toHaveCSS("height", "36px");
+			await expect(sidebar.getByText("demo@example.test", { exact: true })).toHaveCSS(
+				"line-height",
+				"16px",
+			);
+			await expect(sidebar.locator('[data-slot="sidebar-brand-version"]')).toHaveText(
+				`v${APP_VERSION}`,
+			);
+			if (width < 768) {
+				const drawer = page.locator('[data-slot="sidebar-drawer"]');
+				await expect(drawer).toHaveCSS("width", "320px");
+				await expect(drawer.locator("[data-basalt-sidebar]")).toHaveCSS("width", "260px");
+				await expect(drawer).toHaveCSS("padding-left", "0px");
+				await expect(drawer).toHaveCSS("padding-right", "0px");
+				await expect(drawer).toHaveCSS("padding-top", "0px");
+				await expect(drawer).toHaveCSS("padding-bottom", "0px");
+				await expect(opener).toHaveAttribute("aria-controls", /.+/);
+				expect(await opener.getAttribute("aria-controls")).toBe(await drawer.getAttribute("id"));
+				await expect(drawer.getByRole("button", { name: "关闭导航菜单" })).toBeVisible();
+				await page.keyboard.press("Escape");
+				await expect(drawer).toBeHidden();
+				await expect(opener).toBeFocused();
+				await opener.click();
+				await drawer.getByRole("link", { name: "Issues", exact: true }).click();
+				await expect(page).toHaveURL(/\/issues$/);
+				await expect(drawer).toBeHidden();
+				await expect(opener).toBeFocused();
+			} else {
+				const expanded = await avatar.boundingBox();
+				await sidebar.getByRole("button", { name: "折叠侧栏" }).click();
+				await page.mouse.move(1000, 400);
+				await expect(sidebar).toHaveCSS("width", "68px");
+				await expect(avatar).toHaveCSS("width", "36px");
+				await expect(avatar).toHaveCSS("height", "36px");
+				const collapsed = await avatar.boundingBox();
+				expect(expanded).not.toBeNull();
+				expect(collapsed?.y).toBe(expanded?.y);
+				await expect(sidebar.locator('[data-slot="sidebar-brand-name"]')).toBeHidden();
+				const copy = sidebar.locator('[data-slot="sidebar-brand-copy"]');
+				await expect(copy).toHaveCSS("overflow", "hidden");
+				expect((await copy.boundingBox())?.width ?? 0).toBe(0);
+			}
+			expect(writes).toEqual([]);
+		});
+	}
+}
+
 test("command palette opens from collapsed sidebar search control", async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
