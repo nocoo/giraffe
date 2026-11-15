@@ -48,7 +48,7 @@ For daily development, prepare `.dev.vars` from the example without overwriting 
 
 ## Testing and quality contract
 
-6DQ keeps its name with unified L1, L2/L3, G2 and D1; the owner merged former G1 into L1 on 2026-09-21. Statuses: `enforced`, `planned`, `manual`, `N/A`.
+Quality slots are enforced via `.github/workflows/quality-slots.yml` (`quality / Z1: Gate`, System1 v1.3.0 / `nocoo/base-ci v2026.15`). Statuses: `enforced`, `planned`, `manual`, `N/A`.
 
 | Dimension             | Required proof                                                                                                                        | Status   | Current enforcement / gap                                                                                                                                                                                                                                                                                                                                          |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
