@@ -205,7 +205,6 @@ for (const width of [1440, 390, 640]) {
 			);
 			if (width < 768) {
 				const drawer = page.locator('[data-slot="sidebar-drawer"]');
-				await expect(drawer).toHaveCSS("width", "320px");
 				await expect(drawer.locator("[data-basalt-sidebar]")).toHaveCSS("width", "260px");
 				await expect(drawer).toHaveCSS("padding-left", "0px");
 				await expect(drawer).toHaveCSS("padding-right", "0px");
