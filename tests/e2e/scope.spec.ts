@@ -152,6 +152,8 @@ test("scope stays inside business content and fits narrow screens", async ({ pag
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto("/issues");
 	await expect(scopeControl(page).getByRole("radio", { name: "星标", exact: true })).toBeVisible();
+	// The loading placeholder swaps the header actions subtree, so wait for the loaded page before measuring.
+	await expect(page.getByTestId("issue-summary")).toBeVisible();
 	const box = await scopeControl(page).boundingBox();
 	expect(box).not.toBeNull();
 	expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(390);
