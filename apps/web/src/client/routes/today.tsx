@@ -4,6 +4,7 @@ import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
 import { useState } from "react";
 import type { ActivitySnapshot } from "../../lib/activity-types";
+import { ActivitySkeleton } from "../components/layout/page-skeleton";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
 import { useSnapshotRead } from "../components/layout/use-snapshot-read";
 import { catchLoad } from "../lib/error-ui";
@@ -56,12 +57,7 @@ function ActivityReadState({
 			</LayerCard>
 		);
 	if (failed && !snapshot) return <ActivityReadError retry={retry} />;
-	if (!snapshot)
-		return (
-			<LayerCard>
-				<LayerCard.Loading label="加载当次活动" />
-			</LayerCard>
-		);
+	if (!snapshot) return <ActivitySkeleton label="加载当次活动" compact={!!compact} />;
 	return (
 		<>
 			{failed ? (

@@ -28,6 +28,7 @@ import { REFRESH_DIMENSIONS, type RefreshRun } from "../../lib/refresh-types";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { TableScroll } from "../components/layout/collection-chrome";
 import { EmptyState } from "../components/layout/empty-state";
+import { RefreshSkeleton } from "../components/layout/page-skeleton";
 import { useRefreshModel } from "../components/layout/refresh-provider";
 import { NUM_CELL, NUM_HEAD } from "../lib/format";
 import { isRemoteReadOnly } from "../lib/local-environment";
@@ -371,10 +372,7 @@ function RefreshCenterBody({ center }: { center: RefreshCenterViewModel }) {
 								cancelling={state.live.cancelling}
 							/>
 						) : state.loading ? (
-							<p className="refresh-console-note" role="status">
-								<LoaderCircle className="animate-spin" aria-hidden="true" />
-								正在读取刷新记录…
-							</p>
+							<RefreshSkeleton label="加载刷新记录" />
 						) : (
 							<EmptyState
 								icon={<FolderSync aria-hidden="true" />}
@@ -506,11 +504,7 @@ export function RefreshCenter({ model }: { model: RefreshModel }) {
 		return () => next.dispose();
 	}, [model]);
 	if (!center) {
-		return (
-			<p role="status" className="text-sm text-basalt-muted-foreground">
-				正在读取刷新状态…
-			</p>
-		);
+		return <RefreshSkeleton label="加载刷新中心" />;
 	}
 	return <RefreshCenterBody center={center} />;
 }
@@ -518,11 +512,7 @@ export function RefreshCenter({ model }: { model: RefreshModel }) {
 export function RefreshPage() {
 	const model = useRefreshModel();
 	if (!model) {
-		return (
-			<p role="status" className="text-sm text-basalt-muted-foreground">
-				正在读取刷新状态…
-			</p>
-		);
+		return <RefreshSkeleton label="加载刷新中心" />;
 	}
 	return <RefreshCenter model={model} />;
 }
