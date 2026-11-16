@@ -45,7 +45,7 @@ import {
 } from "../components/layout/repository-scope";
 import { INLINE_SEGMENT } from "../components/layout/segment";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
-import { Meter, SortButton } from "../components/layout/table-chrome";
+import { Meter, RelativeTime, SortButton } from "../components/layout/table-chrome";
 import { useSnapshotRead } from "../components/layout/use-snapshot-read";
 import { AgentStateBadge } from "../components/repo-agent-state";
 import { categoryColor } from "../lib/chart-theme";
@@ -435,7 +435,10 @@ export function ReposPage() {
 						</LayerCard.Body>
 					</LayerCard>
 				) : view === "grid" ? (
-					<div className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-3" data-testid="repo-list">
+					<div
+						className="grid min-w-0 gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,20rem),1fr))]"
+						data-testid="repo-list"
+					>
 						{rows.map((row) => {
 							const status = health.get(row.name_with_owner);
 							return (
@@ -488,7 +491,7 @@ export function ReposPage() {
 					<LayerCard>
 						<LayerCard.Body className="p-0">
 							<TableScroll label="仓库列表">
-								<Table className="giraffe-data-table min-w-[900px]" data-testid="repo-list">
+								<Table className="giraffe-data-table min-w-[760px]" data-testid="repo-list">
 									<TableHeader>
 										<TableRow>
 											<TableHead>星标</TableHead>
@@ -502,7 +505,6 @@ export function ReposPage() {
 											</TableHead>
 
 											<TableHead>语言</TableHead>
-											<TableHead>状态</TableHead>
 											<TableHead className={NUM_HEAD}>
 												<SortButton
 													label="Stars"
@@ -510,7 +512,6 @@ export function ReposPage() {
 													onClick={() => setSort("stars")}
 												/>
 											</TableHead>
-											<TableHead className={NUM_HEAD}>Fork</TableHead>
 											<TableHead className={NUM_HEAD}>Issues</TableHead>
 
 											<TableHead className={NUM_HEAD}>
@@ -537,6 +538,12 @@ export function ReposPage() {
 															badges={
 																<>
 																	<AgentStateBadge status={row.agent_state?.status} />
+																	<CandyBadge tone={visibilityBadgeVariant(row.visibility)}>
+																		{formatVisibility(row.visibility)}
+																	</CandyBadge>
+																	{row.is_archived ? (
+																		<CandyBadge tone="orange">已归档</CandyBadge>
+																	) : null}
 																	{row.is_fork ? <CandyBadge tone="teal">Fork</CandyBadge> : null}
 																</>
 															}
@@ -545,20 +552,14 @@ export function ReposPage() {
 													<TableCell>
 														<LanguageLabel name={row.primary_language} />
 													</TableCell>
-													<TableCell>
-														<div className="flex items-center gap-1.5">
-															<CandyBadge tone={visibilityBadgeVariant(row.visibility)}>
-																{formatVisibility(row.visibility)}
-															</CandyBadge>
-															{row.is_archived ? (
-																<CandyBadge tone="orange">已归档</CandyBadge>
-															) : null}
-														</div>
-													</TableCell>
 													<TableCell className={NUM_CELL}>
-														{formatCount(row.stargazer_count)}
+														<div>{formatCount(row.stargazer_count)}</div>
+														{row.fork_count > 0 ? (
+															<div className="text-xs text-basalt-muted-foreground">
+																{formatCount(row.fork_count)} fork
+															</div>
+														) : null}
 													</TableCell>
-													<TableCell className={NUM_CELL}>{formatCount(row.fork_count)}</TableCell>
 													<TableCell>
 														<div className="flex items-center justify-end gap-2">
 															<Meter
@@ -576,12 +577,7 @@ export function ReposPage() {
 																tone={freshnessTone(days)}
 																label={`${row.name_with_owner} activity`}
 															/>
-															<time
-																dateTime={row.pushed_at ?? undefined}
-																title={formatDate(row.pushed_at)}
-															>
-																{formatDate(row.pushed_at).slice(0, 10)}
-															</time>
+															<RelativeTime value={row.pushed_at} />
 														</div>
 													</TableCell>
 													{health.size > 0 ? (

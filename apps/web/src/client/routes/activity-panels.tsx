@@ -84,16 +84,15 @@ export function ActivitySectionBody({
 	return (
 		<>
 			{section.state === "unknown" ? (
-				<p className="mb-basalt-space-lg text-sm" role="note">
-					部分来源未知，不代表窗口内没有活动。
+				<p className="mb-basalt-space-lg text-sm text-basalt-muted-foreground" role="note">
 					{section.missingRepos.length
 						? `缺少完整数据：${section.missingRepos.join("、")}`
 						: "账户仓库范围未完整保存。"}
 				</p>
 			) : null}
 			{section.state === "partial" && !hintedElsewhere ? (
-				<p className="mb-basalt-space-lg text-sm" role="note">
-					记录不完整，不代表窗口内没有活动；当前数量仅为下界。
+				<p className="mb-basalt-space-lg text-sm text-basalt-muted-foreground" role="note">
+					记录不完整，当前数量仅为下界。
 				</p>
 			) : null}
 			{section.state === "empty" ? (
@@ -294,10 +293,7 @@ export function ActivityContent({
 						/>
 						当次窗口
 						<HelpTooltip label="当次窗口说明">
-							<p>北京时间，起点不含、终点包含。</p>
-							<p>窗口延伸至上次成功刷新；缺失日期或失败运行不算无活动。</p>
-							<p>首次窗口仅覆盖已采集的有限回看范围，不代表此前没有活动。</p>
-							<p>已保存的部分数据不是完整总数。</p>
+							<p>北京时间，起点不含、终点包含；覆盖至上次成功刷新。</p>
 						</HelpTooltip>
 					</h2>
 					<div className="flex flex-wrap gap-basalt-space-md">
@@ -358,8 +354,8 @@ export function ActivityContent({
 						{snapshot.repos.length === 0 ? (
 							<p className="text-sm text-basalt-muted-foreground">
 								{snapshot.truncated
-									? "该仓库的活动记录未完整保存，不代表没有活动。"
-									: "已保存的活动窗口不包含该仓库，不代表没有活动。"}
+									? "该仓库的活动记录未完整保存。"
+									: "已保存的活动窗口不包含该仓库。"}
 							</p>
 						) : null}
 					</div>
@@ -402,8 +398,11 @@ export function ActivityContent({
 										{activityCount(day.count)}
 									</p>
 									{day.coverage.status !== "complete" || day.coverage.truncated ? (
-										<p className="mt-basalt-space-md text-xs" role="note">
-											贡献来源不完整或未知，不能当作零贡献。
+										<p
+											className="mt-basalt-space-md text-xs text-basalt-muted-foreground"
+											role="note"
+										>
+											贡献来源不完整或未知。
 										</p>
 									) : null}
 									<dl className="mt-basalt-layout-sm grid grid-cols-2 gap-basalt-space-lg text-xs">

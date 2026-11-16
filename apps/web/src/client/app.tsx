@@ -3,6 +3,7 @@ import { AccentProvider } from "@nocoo/basalt/providers/accent";
 import { lazy, type ReactNode, Suspense } from "react";
 import { BrowserRouter, Link, Navigate, Route, Routes } from "react-router";
 import { AppShell } from "./components/layout/app-shell";
+import { RouteSkeleton } from "./components/layout/page-skeleton";
 import { RefreshProvider } from "./components/layout/refresh-provider";
 import { BusinessOutlet } from "./components/layout/repository-scope";
 import { APP_PATHS, type AppPath } from "./lib/routes";
@@ -84,17 +85,7 @@ function pageRoutes(paths: readonly AppPath[]) {
 		<Route
 			key={path}
 			path={path}
-			element={
-				<Suspense
-					fallback={
-						<p role="status" className="p-4 text-sm text-basalt-muted-foreground">
-							正在加载页面…
-						</p>
-					}
-				>
-					{PAGES[path]}
-				</Suspense>
-			}
+			element={<Suspense fallback={<RouteSkeleton />}>{PAGES[path]}</Suspense>}
 		/>
 	));
 }

@@ -1,12 +1,13 @@
 {
 	"name": "giraffe",
-	"version": "0.29.1",
+	"version": "0.29.2",
 	"private": true,
 	"type": "module",
 	"scripts": {
 		"dev": "bun run scripts/dev.ts",
 		"login:prod": "cloudflared access login https://giraffe.hexly.ai > /dev/null",
 		"dev:server": "bun run scripts/dev-server.ts",
+		"seed:local": "bun run scripts/seed-local.ts",
 		"typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.client.json && tsc --noEmit -p tsconfig.scripts.json && bun run scripts/check-wrangler-types.ts",
 		"build": "bun run scripts/generate-pwa-icons.ts && vite build",
 		"lint": "biome check --error-on-warnings .",

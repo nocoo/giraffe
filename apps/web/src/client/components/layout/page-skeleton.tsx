@@ -1,21 +1,11 @@
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { SkeletonLine } from "@nocoo/basalt/components/skeleton-line";
-import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 const CHART_BARS = [32, 48, 40, 67, 55, 84, 69, 78] as const;
 
-function useDeferredReveal(delayMs = 200): boolean {
-	const [show, setShow] = useState(false);
-	useEffect(() => {
-		const id = window.setTimeout(() => setShow(true), delayMs);
-		return () => window.clearTimeout(id);
-	}, [delayMs]);
-	return show;
-}
-
-function Deferred({ children }: { children: ReactNode }) {
-	const show = useDeferredReveal();
-	return <div className={show ? undefined : "invisible"}>{children}</div>;
+export function Deferred({ children }: { children: ReactNode }) {
+	return <>{children}</>;
 }
 
 function range(count: number, prefix: string) {
@@ -415,6 +405,106 @@ export function RepoDetailSkeleton({ label }: { label: string }) {
 					<SkeletonLine height={12} minWidth={14} maxWidth={18} />
 					<SkeletonLine height={4} minWidth={100} maxWidth={100} />
 				</LayerCard>
+			</div>
+		</Deferred>
+	);
+}
+
+/** Today activity & compact repository activity skeleton matching window card, KPI strip and sections. */
+export function ActivitySkeleton({ label, compact = false }: { label: string; compact?: boolean }) {
+	return (
+		<Deferred>
+			<div role="status" aria-label={label} className="space-y-4">
+				<LayerCard padding="md" className="space-y-3">
+					<SkeletonLine height={12} minWidth={18} maxWidth={26} />
+					<SkeletonLine height={16} minWidth={40} maxWidth={56} />
+					<SkeletonLine height={10} minWidth={28} maxWidth={40} />
+				</LayerCard>
+				<div
+					className={
+						compact
+							? "grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6"
+							: "grid grid-cols-2 gap-3 lg:grid-cols-4"
+					}
+				>
+					{range(compact ? 6 : 4, "act-kpi").map((id) => (
+						<LayerCard key={id} padding="md" className="space-y-2.5">
+							<SkeletonLine height={10} minWidth={42} maxWidth={56} />
+							<SkeletonLine height={24} minWidth={24} maxWidth={34} />
+						</LayerCard>
+					))}
+				</div>
+				<div
+					className={
+						compact ? "grid gap-3 sm:grid-cols-2 xl:grid-cols-3" : "grid gap-4 xl:grid-cols-2"
+					}
+				>
+					{range(compact ? 6 : 4, "act-sec").map((id) => (
+						<LayerCard key={id} padding="md" className="space-y-3">
+							<SkeletonLine height={12} minWidth={24} maxWidth={36} />
+							<SkeletonLine height={12} minWidth={64} maxWidth={86} />
+							<SkeletonLine height={12} minWidth={48} maxWidth={72} />
+						</LayerCard>
+					))}
+				</div>
+			</div>
+		</Deferred>
+	);
+}
+
+/** Refresh center skeleton matching summary strip, request breakdown and repository rows. */
+export function RefreshSkeleton({ label }: { label: string }) {
+	return (
+		<Deferred>
+			<div role="status" aria-label={label} className="space-y-4">
+				<div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+					{range(4, "ref-kpi").map((id) => (
+						<LayerCard key={id} padding="md" className="space-y-2.5">
+							<SkeletonLine height={10} minWidth={40} maxWidth={54} />
+							<SkeletonLine height={22} minWidth={26} maxWidth={38} />
+						</LayerCard>
+					))}
+				</div>
+				<TableRows columns={4} rows={5} />
+			</div>
+		</Deferred>
+	);
+}
+
+/** Compact identity row skeleton matching the h-10 avatar + name/email block on Settings. */
+export function IdentitySkeleton() {
+	return (
+		<div role="status" aria-label="加载身份" className="flex items-center gap-3">
+			<SkeletonLine
+				height={40}
+				minWidth={100}
+				maxWidth={100}
+				className="shrink-0 rounded-full"
+				style={{ width: 40 }}
+			/>
+			<div className="min-w-0 flex-1 space-y-2">
+				<SkeletonLine height={14} minWidth={24} maxWidth={36} />
+				<SkeletonLine height={12} minWidth={40} maxWidth={56} />
+			</div>
+		</div>
+	);
+}
+
+/** Route-level Suspense fallback skeleton preventing text flash during lazy chunk load. */
+export function RouteSkeleton({ label = "加载页面" }: { label?: string }) {
+	return (
+		<Deferred>
+			<div role="status" aria-label={label} className="space-y-4 p-1">
+				<div className="space-y-2">
+					<SkeletonLine height={22} minWidth={18} maxWidth={26} />
+					<SkeletonLine height={12} minWidth={32} maxWidth={44} />
+				</div>
+				<div className="grid gap-3 md:grid-cols-3">
+					<OverviewCardSkeleton kind="bars" id="route-a" />
+					<OverviewCardSkeleton kind="rank" id="route-b" />
+					<OverviewCardSkeleton kind="columns" id="route-c" />
+				</div>
+				<TableRows columns={4} rows={5} />
 			</div>
 		</Deferred>
 	);

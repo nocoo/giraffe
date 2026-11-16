@@ -104,7 +104,7 @@ it("opens one named popover with precise times and mixed/missing source notices"
 	const dialog = document.querySelector('[role="dialog"]');
 	expect(dialog?.getAttribute("aria-labelledby")).toBeTruthy();
 	expect(dialog?.textContent).toContain("数据更新时间");
-	expect(dialog?.textContent).toContain("部分数据仍来自较早的刷新");
+	expect(dialog?.textContent).toContain("部分数据来自较早的刷新。");
 	expect(dialog?.textContent).toContain("1 项缺少数据");
 	expect(dialog?.querySelector("time")?.dateTime).toBe("2026-10-02T08:00:00Z");
 	await act(async () =>

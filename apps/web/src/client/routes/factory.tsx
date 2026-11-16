@@ -45,7 +45,7 @@ import { SelectField } from "../components/layout/select-field";
 import { useSnapshotRead } from "../components/layout/use-snapshot-read";
 import { FLOW_COLORS } from "../lib/chart-theme";
 import { reportError } from "../lib/error-ui";
-import { formatDate, formatDayRange, formatPreciseDate } from "../lib/format";
+import { formatDate, formatDayRange } from "../lib/format";
 import {
 	activityAge,
 	DEFAULT_FACTORY_RANGE,
@@ -354,19 +354,18 @@ export function FactoryPage() {
 						</div>
 					) : !scope.length ? (
 						<p role="status" className="py-8 text-sm text-basalt-muted-foreground">
-							所选 {selection.length} 个仓库尚无工厂观测；缺失不代表零。可通过统一刷新补充观测。
+							所选 {selection.length} 个仓库尚无工厂观测，可通过统一刷新补充。
 						</p>
 					) : (
 						<>
 							{board.unpublished.length ? (
 								<p role="status" className="text-sm text-basalt-muted-foreground">
-									所选范围中 {board.unpublished.length}{" "}
-									个仓库尚无工厂观测；以下为已获取的数据，缺失不代表零。
+									所选范围中 {board.unpublished.length} 个仓库尚无工厂观测。
 								</p>
 							) : null}
 							{board.mixedTimezones ? (
 								<p role="status" className="text-sm text-basalt-muted-foreground">
-									来源时区不一致，日历与期间汇总不可合并；缺失不代表零。
+									来源时区不一致，日历与期间汇总不可合并。
 								</p>
 							) : (
 								<>
@@ -407,7 +406,7 @@ export function FactoryPage() {
 													) : null}
 												</div>
 											}
-											hint={`按已发布观测窗口展示最近 ${board.days.length} 个 ${board.timezone} 日期（默认 ${DEFAULT_FACTORY_RANGE} 天，可切换图表窗口，截止到最新有观测的日期）；没有观测的日期保持空白，不按零绘制。保留的数据沿用原窗口。上方默认 7 天仅用于期间比较，不改变图表窗口。左轴是每日流量（柱），右轴是结果（折线）。Open 存量由当前数量按每日新开与完成倒推；事件不完整时不画折线。`}
+											hint={`左轴为每日事件数（柱），右轴为结果指标（折线）；Open 存量由当前值倒推。默认 7 天仅用于期间比较，不改变图表窗口。`}
 										/>
 										<div className="factory-chart-grid grid gap-3 xl:grid-cols-2">
 											<FactoryPanel
@@ -639,7 +638,7 @@ export function FactoryPage() {
 								<div className="grid gap-3 xl:grid-cols-[1.3fr_1fr]">
 									<FactoryPanel
 										title="需要检查的信号"
-										hint={`PR 超过 7 天、Issue 超过 14 天仍未关闭，或 CI 至少运行 10 次且失败率不低于 20% 时提醒检查。按项目分组，展开查看每条信号；每页 ${SIGNAL_PAGE_SIZE} 个项目。这些信号不代表已经确认有问题。`}
+										hint={`PR 超过 7 天、Issue 超过 14 天仍未关闭，或 CI 至少运行 10 次且失败率不低于 20% 时提醒检查。按项目分组，展开查看每条信号；每页 ${SIGNAL_PAGE_SIZE} 个项目。`}
 									>
 										<div className="factory-signal-list">
 											{signalPages.groups ? (
@@ -728,7 +727,10 @@ export function FactoryPage() {
 											</div>
 										) : null}
 									</FactoryPanel>
-									<FactoryPanel title="依赖与维护" hint="固定 SHA 的直接引用证据">
+									<FactoryPanel
+										title="依赖与维护"
+										hint="基于根 package.json 与工作流中的直接引用；不含传递或动态依赖，全局图不随语言/topic 筛选缩减。"
+									>
 										<div className="flex flex-wrap gap-4 text-xs">
 											<span>
 												机器人开放 PR <strong>{board.aggregate.botOpen}</strong>
@@ -779,25 +781,22 @@ export function FactoryPage() {
 												<p className="py-3 text-xs text-basalt-muted-foreground">
 													{board.dependenciesComplete
 														? "当前没有可解析为纳入仓库的直接引用。"
-														: "依赖分析缺少完整观测，缺失不代表没有依赖。"}
+														: "暂无完整依赖观测。"}
 												</p>
 											) : null}
 										</div>
-										<details className="factory-methods mt-2">
-											<summary>全部引用与范围</summary>
-											<p>
-												仅根 package.json 声明与 ci.yml / release.yml 中的 literal
-												uses；不含传递依赖、monorepo 子包或动态引用。全局引用图不随语言/topic
-												筛选缩减。
-											</p>
-											{visibleEdges.map((e) => (
-												<p key={`${e.source}:${e.target}`}>
-													<a href={safeGithubUrl(e.url)} target="_blank" rel="noreferrer">
-														{e.source} → {e.target} · {e.references} 引用 ↗
-													</a>
-												</p>
-											))}
-										</details>
+										{visibleEdges.length ? (
+											<details className="factory-methods mt-2">
+												<summary>全部引用（{visibleEdges.length}）</summary>
+												{visibleEdges.map((e) => (
+													<p key={`${e.source}:${e.target}`}>
+														<a href={safeGithubUrl(e.url)} target="_blank" rel="noreferrer">
+															{e.source} → {e.target} · {e.references} 引用 ↗
+														</a>
+													</p>
+												))}
+											</details>
+										) : null}
 									</FactoryPanel>
 								</div>
 							</section>
@@ -816,7 +815,7 @@ export function FactoryPage() {
 													{formatDate(board.days.at(-1)?.date).slice(5, 10)}
 												</TableHead>
 												<TableHead className="text-right">提交</TableHead>
-												<TableHead className="text-right">Open I / PR</TableHead>
+												<TableHead className="text-right">Issue / PR</TableHead>
 												<TableHead className="text-right">合并 PR</TableHead>
 												<TableHead className="text-right">CI 成功 / 判定</TableHead>
 												<TableHead className="text-right">发布</TableHead>
@@ -1056,52 +1055,9 @@ export function FactoryPage() {
 							</details>
 						</>
 					)}
-					<details className="factory-methods">
-						<summary>来源、口径与不确定性</summary>
-						<p>
-							最近一次来源检查{" "}
-							{formatPreciseDate(freshness ? freshness.latestAt : snapshot.fetched_at)}。
-							{snapshot.publication?.mixed
-								? "各仓库使用各自最近可用的数据，更新时间与统计范围可能不同。"
-								: `统计范围：${formatPreciseDate(snapshot.window.since)} → ${formatPreciseDate(snapshot.window.until)}。`}
-							{snapshot.window.timezone
-								? `来源时区为 ${snapshot.window.timezone}；按已结束的自然日统计，窗口包含起点和最后一毫秒。`
-								: "来源窗口未标记时区，日历沿用 UTC 日期；未完整覆盖的日期保持缺失。"}
-						</p>
-						<p>
-							调查启动 {formatPreciseDate(snapshot.window.until)}；仓库清单取样后逐资源分页，GitHub
-							不提供跨端点原子快照。状态可能在采集过程中变化。清单覆盖仅限当前令牌可见仓库，包括私有仓库；无权读取的资源显示未知。
-						</p>
-						<p>
-							提交：固定默认分支 SHA、所有作者、committer
-							时间；历史总量与观测窗口内流量分开。账号贡献包含整个 GitHub
-							账号的可见/受限活动，不随工厂仓库筛选变化。语言地图按 Linguist 字节，Git 存储按
-							diskUsage KiB，均不是代码行数。
-						</p>
-						<p>
-							PR P50/P90：窗口内合并样本 {board.aggregate.cycleHours.length}{" "}
-							个的创建到合并耗时，nearest rank。不是首次 review 等待时间。Issue 关闭与 PR
-							关闭只记录最后状态时间，不重建 reopen 转换。长龄规则表示需检查，不证明阻塞。
-						</p>
-						<p>
-							CI 成功率仅使用 success 与 failure/timed_out/action_required/startup_failure
-							的判定结果；取消、跳过等单列。以窗口内创建的 workflow run ID 去重，使用最新
-							attempt；不含已删除或超保留期记录。Release 按 published_at，含 prerelease，不含
-							draft。
-						</p>
-						<p>
-							采集累计请求 {snapshot.requests}；最近响应额度{" "}
-							{snapshot.rate
-								? `${snapshot.rate.resource} ${snapshot.rate.remaining}，重置 ${formatPreciseDate(snapshot.rate.resetAt)}`
-								: "此导入快照未记录最近额度"}
-							。截断数据只表示观察子集；这里仅展示已保存快照，刷新完成后重新读取最新观测。
-						</p>
-						<p>
-							topics 是 GitHub 作者设置的标签，可重叠，不能把标签分组总数相加。引用图只使用可定位的
-							manifest/工作流证据。
-						</p>
-						<details>
-							<summary>排除清单（互斥归因）</summary>
+					{snapshot.inventory.excluded.length ? (
+						<details className="factory-methods">
+							<summary>排除清单（{snapshot.inventory.excluded.length}）</summary>
 							<div className="factory-exclusions">
 								{snapshot.inventory.excluded.map((r) => (
 									<span key={r.name}>
@@ -1110,7 +1066,7 @@ export function FactoryPage() {
 								))}
 							</div>
 						</details>
-					</details>
+					) : null}
 				</div>
 			) : null}
 		</div>

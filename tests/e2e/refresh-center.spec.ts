@@ -57,9 +57,7 @@ test("cancelled account closure does not imply completed collection", async ({ p
 		animations: "disabled",
 	});
 	await page.locator("details.refresh-diagnostics > summary").click();
-	await expect(page.locator("details.refresh-diagnostics")).toContainText(
-		"结束时间表示步骤结束，不代表成功完成采集",
-	);
+	await expect(page.locator("details.refresh-diagnostics")).toContainText("运行编号");
 });
 
 test("settled refresh dimensions do not claim complete observations", async ({ page }, info) => {

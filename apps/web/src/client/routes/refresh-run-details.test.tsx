@@ -192,7 +192,7 @@ it("explains a failed account run and an empty B without inventing repositories"
 	expect(text).toContain("A · 账号信息、贡献与仓库清单");
 	expect(text).toContain("复用当日账号数据，0 次上游请求");
 	expect(text).toContain("还没有仓库进入 B");
-	expect(text).toContain("这次运行没有保存逐步时间戳");
+	expect(text).toContain("运行编号 run-1");
 });
 
 it("keeps active cancellation and an older request payload honest", async () => {
@@ -265,7 +265,7 @@ it("renders a cancellation-closed account step as interrupted without settled at
 	const text = container.textContent ?? "";
 	expect(text).toContain("0 / 1");
 	expect(text).not.toContain("完成 2026");
-	expect(text).toContain("结束时间表示步骤结束，不代表成功完成采集");
+	expect(text).not.toContain("不代表成功完成采集");
 	expect(text).not.toContain("未完成的步骤只显示已开始时间");
 });
 

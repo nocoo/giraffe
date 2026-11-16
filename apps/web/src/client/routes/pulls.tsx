@@ -11,8 +11,8 @@ import {
 	TableHeader,
 	TableRow,
 } from "@nocoo/basalt/components/table";
-import { Clock3, GitPullRequest } from "lucide-react";
-import { useMemo, useState } from "react";
+import { GitPullRequest } from "lucide-react";
+import { type CSSProperties, useMemo, useState } from "react";
 import type { FactoryViewSnapshot } from "../../lib/factory-types";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ChartBrick } from "../components/layout/chart-brick";
@@ -32,7 +32,12 @@ import { ShareBar } from "../components/layout/rank-bars";
 import { RepositoryScopeFilter, ScopeEmpty } from "../components/layout/repository-scope";
 import { INLINE_SEGMENT } from "../components/layout/segment";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
-import { ChurnMeter, PersonCell, SortButton } from "../components/layout/table-chrome";
+import {
+	ChurnMeter,
+	PersonCell,
+	RelativeTime,
+	SortButton,
+} from "../components/layout/table-chrome";
 import { useSnapshotRead } from "../components/layout/use-snapshot-read";
 import { chartColor } from "../lib/chart-theme";
 import { catchLoad } from "../lib/error-ui";
@@ -40,7 +45,6 @@ import {
 	churnFilled,
 	DATE_CELL,
 	formatCount,
-	formatDate,
 	formatReview,
 	NUM_CELL,
 	NUM_HEAD,
@@ -74,6 +78,7 @@ export function PullsPage() {
 	const [query, setQuery] = useState("");
 	const [sort, setSort] = useState<PullSort>("updated");
 	const [picked, setPicked] = useState<PullFilters>(NO_FILTERS);
+	const [groupBy, setGroupBy] = useState<"repo" | "author">("repo");
 	const [factory, setFactory] = useState<FactoryViewSnapshot | null>(null);
 	const history = useMemo(
 		() => (factory ? mergedHistory(factory.repos, factory.window.until, 30) : null),
@@ -135,7 +140,7 @@ export function PullsPage() {
 				/>
 				<ListPageSkeleton
 					label="加载 Pull Requests"
-					cards={["bars", "rank", "columns"]}
+					cards={["bars", "columns", "rank", "rank"]}
 					columns={5}
 				/>
 			</div>
@@ -231,7 +236,7 @@ export function PullsPage() {
 			</div>
 			{board.total ? (
 				<>
-					<div className="giraffe-overview">
+					<div className="giraffe-overview" style={{ "--cols": history ? 4 : 3 } as CSSProperties}>
 						<OverviewCard
 							title="审查状态"
 							hint="草稿、待审查、需修改、已批准与未标记，点击图例下方的状态筛选。"
@@ -265,13 +270,13 @@ export function PullsPage() {
 							title="年龄与规模"
 							hint="上方为创建至今的天数分布，点击筛选；下方为增删行数的规模分组。"
 						>
-							<AgeStrip
-								age={board.age}
-								active={picked.age}
-								onSelect={pick("age")}
-								label="PR 年龄分布"
-							/>
-							<div className="mt-4">
+							<div className="flex flex-1 flex-col justify-between gap-4">
+								<AgeStrip
+									age={board.age}
+									active={picked.age}
+									onSelect={pick("age")}
+									label="PR 年龄分布"
+								/>
 								<ShareBar
 									label="PR 变更规模"
 									parts={board.sizes.map((b, i) => ({
@@ -295,15 +300,28 @@ export function PullsPage() {
 							</OverviewCard>
 						) : null}
 						<OverviewCard title="按仓库与作者" hint="open PR 最多的仓库与作者，点击筛选。">
-							<Breakdown
-								rows={board.repos.rows}
-								max={board.repos.max}
-								label="PR 按仓库"
-								active={picked.repo}
-								onSelect={pick("repo")}
-								format={shortRepo}
-							/>
-							<div className="mt-3 border-t border-basalt-border pt-3">
+							<div className="mb-3 flex justify-end">
+								<SegmentControl
+									legend="分组维度"
+									className={INLINE_SEGMENT}
+									value={groupBy}
+									onValueChange={(value) => setGroupBy(value === "author" ? "author" : "repo")}
+									options={[
+										{ value: "repo", label: "仓库" },
+										{ value: "author", label: "作者" },
+									]}
+								/>
+							</div>
+							{groupBy === "repo" ? (
+								<Breakdown
+									rows={board.repos.rows}
+									max={board.repos.max}
+									label="PR 按仓库"
+									active={picked.repo}
+									onSelect={pick("repo")}
+									format={shortRepo}
+								/>
+							) : (
 								<Breakdown
 									rows={board.authors.rows}
 									max={board.authors.max}
@@ -312,7 +330,7 @@ export function PullsPage() {
 									onSelect={pick("author")}
 									userAvatars
 								/>
-							</div>
+							)}
 						</OverviewCard>
 					</div>
 					<ActiveFilters
@@ -442,14 +460,7 @@ export function PullsPage() {
 														</div>
 													</TableCell>
 													<TableCell className={DATE_CELL}>
-														<span className="inline-flex items-center justify-end gap-1.5">
-															<Clock3
-																className="size-3.5 shrink-0 text-basalt-muted-foreground"
-																strokeWidth={1.5}
-																aria-hidden="true"
-															/>
-															<time dateTime={row.updated_at}>{formatDate(row.updated_at)}</time>
-														</span>
+														<RelativeTime value={row.updated_at} withIcon />
 													</TableCell>
 												</TableRow>
 											);

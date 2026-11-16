@@ -88,11 +88,11 @@ function RefreshPanel({
 							</p>
 							{state.run.errorCode ? <p>错误代码：{state.run.errorCode}</p> : null}
 							{state.run.status === "partial" || state.run.status === "failed" ? (
-								<p>部分来源缺少数据，缺失不代表零；已有观测保留原始时间。</p>
+								<p>部分来源缺少数据，已有观测保留原始时间。</p>
 							) : null}
 						</>
 					) : (
-						"尚无刷新记录；没有快照时显示缺失，不代表零。"
+						"尚无刷新记录。"
 					)}
 				</div>
 				{state.error ? (

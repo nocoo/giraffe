@@ -115,7 +115,7 @@ for (const width of [1440, 1024, 390]) {
 		await page.getByRole("button", { name: /^数据更新时间：/ }).click();
 		const dialog = page.getByRole("dialog", { name: "数据更新时间" });
 		await expect(dialog).toContainText("3 项缺少数据");
-		await expect(dialog).toContainText("部分数据仍来自较早的刷新");
+		await expect(dialog).toContainText("部分数据来自较早的刷新。");
 		expect((await dialog.boundingBox())?.width).toBeLessThanOrEqual(width);
 		await page.keyboard.press("Escape");
 		await expect(header.getByRole("group", { name: "仓库范围", exact: true })).toBeVisible();
@@ -152,7 +152,7 @@ test("one header clock shows saved source times without retired refresh records"
 	await trigger.click();
 	const dialog = page.getByRole("dialog", { name: "数据更新时间" });
 	await expect(dialog.locator("time")).toHaveAttribute("datetime", "2026-10-01T08:09:00Z");
-	await expect(dialog).toContainText("部分数据仍来自较早的刷新");
+	await expect(dialog).toContainText("部分数据来自较早的刷新。");
 	await page.keyboard.press("Escape");
 	await expect(trigger).toBeFocused();
 	await page

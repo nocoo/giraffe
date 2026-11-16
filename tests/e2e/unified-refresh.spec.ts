@@ -236,7 +236,7 @@ test("real unified refresh reloads data, respects stars and supports an unstarre
 	const dependencies = page
 		.locator("[data-basalt-surface]")
 		.filter({ has: page.getByRole("heading", { name: "依赖与维护", exact: true }) });
-	await expect(dependencies).toContainText("依赖分析缺少完整观测，缺失不代表没有依赖。");
+	await expect(dependencies).toContainText("暂无完整依赖观测。");
 	await expect(dependencies).not.toContainText("观测引用边 0");
 	await dependencies.screenshot({
 		path: test.info().outputPath("refresh-factory-dependencies.png"),
@@ -347,7 +347,7 @@ test("mobile refresh recovers with GET status reads and reports partial data wit
 		timeout: 10_000,
 	});
 	await expect(dialog.getByRole("status")).toContainText("错误代码：github_unavailable");
-	await expect(dialog.getByRole("status")).toContainText("缺失不代表零");
+	await expect(dialog.getByRole("status")).toContainText("部分来源缺少数据");
 	await expect(dialog.getByRole("button", { name: "开始刷新", exact: true })).toBeEnabled();
 	expect(starts).toBe(2);
 	expect(polls).toBe(2);

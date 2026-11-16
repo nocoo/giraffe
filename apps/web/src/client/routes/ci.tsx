@@ -244,11 +244,16 @@ export function CiPage() {
 
 			<div className="giraffe-overview" style={{ "--cols": 2 } as React.CSSProperties}>
 				<ChartBrick
-					title="继续观察"
-					description="默认分支近期有失败，但已恢复或尚未达到持续失败阈值。反复失败：近 10 次判定失败超过 1 次；偶发：只失败 1 次。"
+					title={`反复失败 · ${recurring.length}`}
+					description="默认分支近 10 次判定失败超过 1 次，尚未达到持续失败阈值。"
 				>
-					<WatchList title={`反复失败 · ${recurring.length}`} items={recurring} now={report.now} />
-					<WatchList title={`偶发一次 · ${oneOff.length}`} items={oneOff} now={report.now} muted />
+					<WatchList items={recurring} now={report.now} />
+				</ChartBrick>
+				<ChartBrick
+					title={`偶发一次 · ${oneOff.length}`}
+					description="默认分支近 10 次判定仅失败 1 次，且已恢复或尚未复发。"
+				>
+					<WatchList items={oneOff} now={report.now} muted />
 				</ChartBrick>
 			</div>
 
@@ -296,7 +301,6 @@ export function CiPage() {
 										<TableHead>判定</TableHead>
 										<TableHead>最近 10 次 · 旧 → 新</TableHead>
 										<TableHead className={NUM_HEAD}>成功率</TableHead>
-										<TableHead className={NUM_HEAD}>最后成功</TableHead>
 										<TableHead className={NUM_HEAD}>最后运行</TableHead>
 									</TableRow>
 								</TableHeader>
@@ -343,24 +347,29 @@ export function CiPage() {
 												{s.rate === null ? "—" : `${Math.round(s.rate * 100)}%`}
 											</TableCell>
 											<TableCell className={DATE_CELL}>
-												<span className="inline-flex items-center justify-end gap-1.5">
-													<Clock3
-														className="size-3.5 shrink-0"
-														strokeWidth={1.5}
-														aria-hidden="true"
-													/>
-													{ago(s.lastSuccess, report.now)}
-												</span>
-											</TableCell>
-											<TableCell className={DATE_CELL}>
-												<span className="inline-flex items-center justify-end gap-1.5">
-													<Clock3
-														className="size-3.5 shrink-0"
-														strokeWidth={1.5}
-														aria-hidden="true"
-													/>
-													{ago(s.lastRun, report.now)}
-												</span>
+												<div className="flex flex-col items-end gap-0.5">
+													<span className="inline-flex items-center justify-end gap-1.5">
+														<Clock3
+															className="size-3.5 shrink-0"
+															strokeWidth={1.5}
+															aria-hidden="true"
+														/>
+														<time
+															dateTime={s.lastRun ?? undefined}
+															title={s.lastRun ? formatDate(s.lastRun) : undefined}
+														>
+															{ago(s.lastRun, report.now)}
+														</time>
+													</span>
+													{s.lastSuccess && s.lastSuccess !== s.lastRun ? (
+														<span
+															className="text-xs text-basalt-muted-foreground"
+															title={formatDate(s.lastSuccess)}
+														>
+															成功 {ago(s.lastSuccess, report.now)}
+														</span>
+													) : null}
+												</div>
 											</TableCell>
 										</TableRow>
 									))}
@@ -563,22 +572,19 @@ function StreamCard({ s, now }: { s: CiStream; now: string }) {
 }
 
 function WatchList({
-	title,
 	items,
 	now,
 	muted = false,
 }: {
-	title: string;
 	items: CiStream[];
 	now: string;
 	muted?: boolean;
 }) {
 	return (
 		<div className="giraffe-watch" data-muted={muted || undefined}>
-			<h3>
-				{title}
+			<div className="flex justify-end">
 				<span className="giraffe-watch-order">方块 旧 → 新</span>
-			</h3>
+			</div>
 			{items.length ? (
 				<ul>
 					{items.slice(0, 12).map((s) => (

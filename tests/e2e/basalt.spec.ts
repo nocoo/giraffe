@@ -365,7 +365,7 @@ test("signal list expands fully and fills the space beside a taller dependency c
 	const originalHeight = await list.evaluate((element) => element.clientHeight);
 	expect(originalHeight).toBeGreaterThan(220);
 	expect(await list.evaluate((element) => element.scrollHeight - element.clientHeight)).toBe(0);
-	await page.getByText("全部引用与范围", { exact: true }).click();
+	await page.getByText(/^全部引用（/).click();
 	expect(await list.evaluate((element) => element.clientHeight)).toBeGreaterThan(originalHeight);
 	const bottomGap = await list.evaluate((element) => {
 		const body = element.parentElement;

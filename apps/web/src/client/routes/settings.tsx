@@ -29,6 +29,7 @@ import { CandyBadge } from "../components/layout/candy-badge";
 import { ResultCount, TableScroll } from "../components/layout/collection-chrome";
 import { EmptyState } from "../components/layout/empty-state";
 import { IconLabel } from "../components/layout/icon-label";
+import { IdentitySkeleton } from "../components/layout/page-skeleton";
 import { catchLoad, reportError, reportOk } from "../lib/error-ui";
 import { initials } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
@@ -196,9 +197,7 @@ export function SettingsPage() {
 									</div>
 								</div>
 							) : (
-								<p className="text-sm text-basalt-muted-foreground" role="status">
-									加载身份…
-								</p>
+								<IdentitySkeleton />
 							)}
 							<div className="space-y-2 text-sm leading-6 text-basalt-muted-foreground">
 								<p>访问身份由 Cloudflare Access 验证。</p>

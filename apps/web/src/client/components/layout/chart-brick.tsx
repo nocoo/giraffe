@@ -15,7 +15,7 @@ export function ChartBrick({
 	children: ReactNode;
 }) {
 	return (
-		<LayerCard className="min-w-0">
+		<LayerCard className="h-full min-w-0">
 			<LayerCard.Header>
 				<div className="flex items-center gap-2">
 					<Text as="h3" variant="heading">

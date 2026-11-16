@@ -44,7 +44,6 @@ import {
 	refreshScopeLabel,
 	type refreshStepTiming,
 	refreshTimingRows,
-	refreshTimings,
 	refreshWindowLabel,
 } from "../viewmodels/refresh-center";
 
@@ -222,7 +221,6 @@ export function RefreshRunDetails({
 	const requestNote = refreshRequestNote(run);
 	const groups = reasonGroups(run);
 	const problems = refreshProblemRepos(run);
-	const timings = refreshTimings(run);
 	const active = refreshActive(run);
 	const cancelable = canCancelRefresh(run) && onCancel !== undefined;
 	const bProcessed = rows.filter(
@@ -515,11 +513,6 @@ export function RefreshRunDetails({
 					次请求
 					{run.aReused ? " · A 复用当日账号数据" : ""}
 					{run.errorCode ? ` · 错误代码 ${run.errorCode}` : ""}
-				</p>
-				<p>
-					{timings
-						? "逐步时间来自本次运行记录；结束时间表示步骤结束，不代表成功完成采集。"
-						: "这次运行没有保存逐步时间戳，只显示运行级开始、更新与结束时间。"}
 				</p>
 			</details>
 		</div>

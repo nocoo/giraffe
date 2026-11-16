@@ -11,7 +11,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "@nocoo/basalt/components/table";
-import { CircleDot, Clock3, MessageSquare } from "lucide-react";
+import { CircleDot, MessageSquare } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { FactoryViewSnapshot } from "../../lib/factory-types";
 import { CandyBadge } from "../components/layout/candy-badge";
@@ -32,11 +32,16 @@ import { ProjectLink } from "../components/layout/project-identity";
 import { RepositoryScopeFilter, ScopeEmpty } from "../components/layout/repository-scope";
 import { INLINE_SEGMENT } from "../components/layout/segment";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
-import { LabelChips, PersonCell, SortButton } from "../components/layout/table-chrome";
+import {
+	LabelChips,
+	PersonCell,
+	RelativeTime,
+	SortButton,
+} from "../components/layout/table-chrome";
 import { useSnapshotRead } from "../components/layout/use-snapshot-read";
 import { FLOW_COLORS } from "../lib/chart-theme";
 import { catchLoad } from "../lib/error-ui";
-import { DATE_CELL, formatCount, formatDate, NUM_CELL, NUM_HEAD } from "../lib/format";
+import { DATE_CELL, formatCount, NUM_HEAD } from "../lib/format";
 import { PAGE_DESCRIPTIONS } from "../lib/navigation";
 import { type WorkFilters, workBoard } from "../viewmodels/boards";
 import { factoryDays, factoryFreshness, loadFactory } from "../viewmodels/factory";
@@ -278,7 +283,6 @@ export function IssuesPage() {
 											</TableHead>
 											<TableHead>标签</TableHead>
 											<TableHead>作者</TableHead>
-											<TableHead className={NUM_HEAD}>评论</TableHead>
 											<TableHead className={NUM_HEAD}>
 												<SortButton
 													label="更新"
@@ -291,7 +295,7 @@ export function IssuesPage() {
 									<TableBody>
 										{rows.map((row) => (
 											<TableRow key={`${row.name_with_owner}#${row.number}`}>
-												<TableCell className="w-[42%] min-w-64">
+												<TableCell className="w-[46%] min-w-64">
 													<div className="flex min-w-0 items-start gap-2">
 														<CircleDot
 															className="mt-0.5 size-4 shrink-0 text-basalt-muted-foreground"
@@ -314,6 +318,19 @@ export function IssuesPage() {
 																	repo={row.name_with_owner}
 																	className="text-xs font-normal text-basalt-muted-foreground"
 																/>
+																{row.comments_count > 0 ? (
+																	<>
+																		<span aria-hidden="true">·</span>
+																		<span className="inline-flex items-center gap-1 tabular-nums">
+																			<MessageSquare
+																				className="size-3 shrink-0"
+																				strokeWidth={1.5}
+																				aria-hidden="true"
+																			/>
+																			{formatCount(row.comments_count)}
+																		</span>
+																	</>
+																) : null}
 															</div>
 														</div>
 													</div>
@@ -324,25 +341,8 @@ export function IssuesPage() {
 												<TableCell>
 													<PersonCell login={row.author_login} />
 												</TableCell>
-												<TableCell className={NUM_CELL}>
-													<span className="inline-flex items-center justify-end gap-1.5">
-														<MessageSquare
-															className="size-3.5 shrink-0 text-basalt-muted-foreground"
-															strokeWidth={1.5}
-															aria-hidden="true"
-														/>
-														{formatCount(row.comments_count)}
-													</span>
-												</TableCell>
 												<TableCell className={DATE_CELL}>
-													<span className="inline-flex items-center justify-end gap-1.5">
-														<Clock3
-															className="size-3.5 shrink-0 text-basalt-muted-foreground"
-															strokeWidth={1.5}
-															aria-hidden="true"
-														/>
-														<time dateTime={row.updated_at}>{formatDate(row.updated_at)}</time>
-													</span>
+													<RelativeTime value={row.updated_at} withIcon />
 												</TableCell>
 											</TableRow>
 										))}

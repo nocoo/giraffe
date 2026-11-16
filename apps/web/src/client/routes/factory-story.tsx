@@ -273,7 +273,7 @@ export function factoryCountAxisTicks(domain: readonly [number, number]): number
 
 const FACTORY_RATE_AXIS_TICKS = [0, 0.25, 0.5, 0.75, 1] as const;
 
-const FACTORY_DUAL_AXIS_MARGIN = { top: 8, right: 44, bottom: 0, left: 16 } as const;
+const FACTORY_DUAL_AXIS_MARGIN = { top: 8, right: 12, bottom: 0, left: 16 } as const;
 
 const FACTORY_SECONDARY_Y_AXIS = {
 	hide: false,

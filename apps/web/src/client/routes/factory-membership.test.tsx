@@ -247,12 +247,12 @@ it.each([false, true])(
 				),
 			);
 			if (mixed) {
-				expect(container.textContent).toContain(
-					"来源时区不一致，日历与期间汇总不可合并；缺失不代表零。",
-				);
+				expect(container.textContent).toContain("来源时区不一致，日历与期间汇总不可合并。");
 				expect(container.querySelector("#factory-change-title")).toBeNull();
 			} else {
-				expect(container.textContent).toContain("90 个 Asia/Shanghai 日期");
+				expect(container.querySelector("#factory-change-title")?.textContent).toBe(
+					"变化 · 最近 90 天",
+				);
 				expect(container.textContent).toContain(
 					"2026-10-28 00:00 → 2026-10-29 00:00 (Asia/Shanghai)",
 				);
@@ -288,7 +288,7 @@ it("defaults the historical chart window to 90 days and keeps range options", as
 		if (!thirty) throw new Error("Missing 30-day chart range");
 		await act(async () => thirty.click());
 		expect(container.querySelector("#factory-change-title")?.textContent).toBe("变化 · 最近 30 天");
-		expect(container.textContent).toContain("没有观测的日期保持空白，不按零绘制");
+		expect(container.textContent).toContain("Open 存量由当前值倒推");
 		const wider = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="radio"]')).find(
 			(radio) => radio.textContent === "180 天",
 		);
@@ -330,13 +330,7 @@ it.each([30, 90])("keeps the default chart span over %i published days", async (
 		expect(container.textContent).not.toContain("每日快速刷新");
 		expect(container.textContent).not.toContain("每周深度刷新");
 		expect(container.textContent).toContain("默认 7 天仅用于期间比较");
-		const methodology = Array.from(container.querySelectorAll("details")).find(
-			(details) => details.querySelector("summary")?.textContent === "来源、口径与不确定性",
-		);
-		if (!methodology) throw new Error("Missing factory methodology");
-		methodology.open = true;
-		expect(methodology.textContent).toContain("历史总量与观测窗口内流量分开");
-		expect(methodology.textContent).not.toMatch(/历史总量与\s*90\s*天流量分开/);
+		expect(container.textContent).not.toContain("来源、口径与不确定性");
 	} finally {
 		await act(async () => root.unmount());
 	}
@@ -366,9 +360,7 @@ it.each(["unavailable", "complete"] as const)(
 				(heading) => heading.textContent === "依赖与维护",
 			)?.parentElement;
 			expect(panel?.textContent).toContain(status === "complete" ? "观测引用边 0" : "观测引用边 —");
-			expect(panel?.textContent?.includes("依赖分析缺少完整观测，缺失不代表没有依赖。")).toBe(
-				status !== "complete",
-			);
+			expect(panel?.textContent?.includes("暂无完整依赖观测。")).toBe(status !== "complete");
 		} finally {
 			await act(async () => root.unmount());
 		}
