@@ -435,7 +435,10 @@ export function ReposPage() {
 						</LayerCard.Body>
 					</LayerCard>
 				) : view === "grid" ? (
-					<div className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-3" data-testid="repo-list">
+					<div
+						className="grid min-w-0 gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,20rem),1fr))]"
+						data-testid="repo-list"
+					>
 						{rows.map((row) => {
 							const status = health.get(row.name_with_owner);
 							return (

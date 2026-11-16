@@ -511,7 +511,7 @@ export function RepoDetailPage() {
 									</ChartBrick>
 								) : null}
 							</div>
-							<div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+							<KpiRow>
 								<Kpi icon={Star} label="Stars" value={formatCount(snap.stargazer_count)} />
 								<Kpi icon={GitFork} label="Forks" value={formatCount(snap.fork_count)} />
 								<Kpi
@@ -542,7 +542,7 @@ export function RepoDetailPage() {
 											: `发布间隔中位 ${activity.releases.cadenceDays} 天`
 									}
 								/>
-							</div>
+							</KpiRow>
 							<div className="grid gap-basalt-layout xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
 								<div className="flex min-w-0 flex-col gap-basalt-layout">
 									<RepoCurrentActivity repository={`${owner}/${name}`} compact />

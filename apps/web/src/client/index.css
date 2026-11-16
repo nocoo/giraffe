@@ -283,7 +283,7 @@ a.giraffe-health-tile:hover { background:color-mix(in srgb,var(--tile) 36%,trans
 .giraffe-ci-summary dd { display:flex;flex-direction:column;margin:0; }
 .giraffe-ci-summary dd strong { font-size:1.5rem;line-height:1.2;font-weight:600;font-variant-numeric:tabular-nums; }
 .giraffe-ci-summary dd small,.giraffe-ci-summary>p { font-size:var(--text-xs);color:var(--color-basalt-muted-foreground); }
-.giraffe-ci-cards { display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(18rem,1fr)); }
+.giraffe-ci-cards { display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(18rem,1fr)); }
 .giraffe-ci-cards li { list-style:none; }
 .giraffe-ci-card { display:flex;flex-direction:column;gap:10px;height:100%;border-left:3px solid hsl(var(--basalt-accent-8)); }
 .giraffe-ci-clear { padding:14px 16px;border-radius:8px;background:color-mix(in srgb,var(--color-basalt-chart-5) 18%,transparent);font-size:var(--text-sm); }

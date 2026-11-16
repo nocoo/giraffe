@@ -244,11 +244,16 @@ export function CiPage() {
 
 			<div className="giraffe-overview" style={{ "--cols": 2 } as React.CSSProperties}>
 				<ChartBrick
-					title="继续观察"
-					description="默认分支近期有失败，但已恢复或尚未达到持续失败阈值。反复失败：近 10 次判定失败超过 1 次；偶发：只失败 1 次。"
+					title={`反复失败 · ${recurring.length}`}
+					description="默认分支近 10 次判定失败超过 1 次，尚未达到持续失败阈值。"
 				>
-					<WatchList title={`反复失败 · ${recurring.length}`} items={recurring} now={report.now} />
-					<WatchList title={`偶发一次 · ${oneOff.length}`} items={oneOff} now={report.now} muted />
+					<WatchList items={recurring} now={report.now} />
+				</ChartBrick>
+				<ChartBrick
+					title={`偶发一次 · ${oneOff.length}`}
+					description="默认分支近 10 次判定仅失败 1 次，且已恢复或尚未复发。"
+				>
+					<WatchList items={oneOff} now={report.now} muted />
 				</ChartBrick>
 			</div>
 
@@ -563,22 +568,19 @@ function StreamCard({ s, now }: { s: CiStream; now: string }) {
 }
 
 function WatchList({
-	title,
 	items,
 	now,
 	muted = false,
 }: {
-	title: string;
 	items: CiStream[];
 	now: string;
 	muted?: boolean;
 }) {
 	return (
 		<div className="giraffe-watch" data-muted={muted || undefined}>
-			<h3>
-				{title}
+			<div className="flex justify-end">
 				<span className="giraffe-watch-order">方块 旧 → 新</span>
-			</h3>
+			</div>
 			{items.length ? (
 				<ul>
 					{items.slice(0, 12).map((s) => (
