@@ -74,6 +74,7 @@ export function PullsPage() {
 	const [query, setQuery] = useState("");
 	const [sort, setSort] = useState<PullSort>("updated");
 	const [picked, setPicked] = useState<PullFilters>(NO_FILTERS);
+	const [groupBy, setGroupBy] = useState<"repo" | "author">("repo");
 	const [factory, setFactory] = useState<FactoryViewSnapshot | null>(null);
 	const history = useMemo(
 		() => (factory ? mergedHistory(factory.repos, factory.window.until, 30) : null),
@@ -265,13 +266,13 @@ export function PullsPage() {
 							title="年龄与规模"
 							hint="上方为创建至今的天数分布，点击筛选；下方为增删行数的规模分组。"
 						>
-							<AgeStrip
-								age={board.age}
-								active={picked.age}
-								onSelect={pick("age")}
-								label="PR 年龄分布"
-							/>
-							<div className="mt-4">
+							<div className="flex flex-1 flex-col justify-between gap-4">
+								<AgeStrip
+									age={board.age}
+									active={picked.age}
+									onSelect={pick("age")}
+									label="PR 年龄分布"
+								/>
 								<ShareBar
 									label="PR 变更规模"
 									parts={board.sizes.map((b, i) => ({
@@ -295,15 +296,28 @@ export function PullsPage() {
 							</OverviewCard>
 						) : null}
 						<OverviewCard title="按仓库与作者" hint="open PR 最多的仓库与作者，点击筛选。">
-							<Breakdown
-								rows={board.repos.rows}
-								max={board.repos.max}
-								label="PR 按仓库"
-								active={picked.repo}
-								onSelect={pick("repo")}
-								format={shortRepo}
-							/>
-							<div className="mt-3 border-t border-basalt-border pt-3">
+							<div className="mb-3 flex justify-end">
+								<SegmentControl
+									legend="分组维度"
+									className={INLINE_SEGMENT}
+									value={groupBy}
+									onValueChange={(value) => setGroupBy(value === "author" ? "author" : "repo")}
+									options={[
+										{ value: "repo", label: "仓库" },
+										{ value: "author", label: "作者" },
+									]}
+								/>
+							</div>
+							{groupBy === "repo" ? (
+								<Breakdown
+									rows={board.repos.rows}
+									max={board.repos.max}
+									label="PR 按仓库"
+									active={picked.repo}
+									onSelect={pick("repo")}
+									format={shortRepo}
+								/>
+							) : (
 								<Breakdown
 									rows={board.authors.rows}
 									max={board.authors.max}
@@ -312,7 +326,7 @@ export function PullsPage() {
 									onSelect={pick("author")}
 									userAvatars
 								/>
-							</div>
+							)}
 						</OverviewCard>
 					</div>
 					<ActiveFilters
