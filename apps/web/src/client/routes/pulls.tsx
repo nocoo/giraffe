@@ -11,7 +11,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "@nocoo/basalt/components/table";
-import { Clock3, GitPullRequest } from "lucide-react";
+import { GitPullRequest } from "lucide-react";
 import { type CSSProperties, useMemo, useState } from "react";
 import type { FactoryViewSnapshot } from "../../lib/factory-types";
 import { CandyBadge } from "../components/layout/candy-badge";
@@ -32,7 +32,12 @@ import { ShareBar } from "../components/layout/rank-bars";
 import { RepositoryScopeFilter, ScopeEmpty } from "../components/layout/repository-scope";
 import { INLINE_SEGMENT } from "../components/layout/segment";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
-import { ChurnMeter, PersonCell, SortButton } from "../components/layout/table-chrome";
+import {
+	ChurnMeter,
+	PersonCell,
+	RelativeTime,
+	SortButton,
+} from "../components/layout/table-chrome";
 import { useSnapshotRead } from "../components/layout/use-snapshot-read";
 import { chartColor } from "../lib/chart-theme";
 import { catchLoad } from "../lib/error-ui";
@@ -40,7 +45,6 @@ import {
 	churnFilled,
 	DATE_CELL,
 	formatCount,
-	formatDate,
 	formatReview,
 	NUM_CELL,
 	NUM_HEAD,
@@ -456,14 +460,7 @@ export function PullsPage() {
 														</div>
 													</TableCell>
 													<TableCell className={DATE_CELL}>
-														<span className="inline-flex items-center justify-end gap-1.5">
-															<Clock3
-																className="size-3.5 shrink-0 text-basalt-muted-foreground"
-																strokeWidth={1.5}
-																aria-hidden="true"
-															/>
-															<time dateTime={row.updated_at}>{formatDate(row.updated_at)}</time>
-														</span>
+														<RelativeTime value={row.updated_at} withIcon />
 													</TableCell>
 												</TableRow>
 											);

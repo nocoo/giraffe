@@ -11,7 +11,7 @@ import {
 	TableRow,
 } from "@nocoo/basalt/components/table";
 import { TablePager } from "@nocoo/basalt/components/table-pager";
-import { Bell, CheckCheck, Clock3, Inbox, MailCheck, MailOpen } from "lucide-react";
+import { Bell, CheckCheck, Inbox, MailCheck, MailOpen } from "lucide-react";
 import { useMemo, useState } from "react";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ResultCount, TableScroll } from "../components/layout/collection-chrome";
@@ -33,6 +33,7 @@ import {
 } from "../components/layout/repository-scope";
 import { INLINE_SEGMENT } from "../components/layout/segment";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
+import { RelativeTime } from "../components/layout/table-chrome";
 import { useSnapshotRead } from "../components/layout/use-snapshot-read";
 import { chartColor } from "../lib/chart-theme";
 import { catchLoad } from "../lib/error-ui";
@@ -327,14 +328,7 @@ export function InboxPage() {
 														</CandyBadge>
 													</TableCell>
 													<TableCell className={DATE_CELL}>
-														<span className="inline-flex items-center justify-end gap-1.5">
-															<Clock3
-																className="size-3.5 shrink-0 text-basalt-muted-foreground"
-																strokeWidth={1.5}
-																aria-hidden="true"
-															/>
-															<time dateTime={row.updated_at}>{formatDate(row.updated_at)}</time>
-														</span>
+														<RelativeTime value={row.updated_at} withIcon />
 													</TableCell>
 													<TableCell className="text-right">
 														{row.unread ? (

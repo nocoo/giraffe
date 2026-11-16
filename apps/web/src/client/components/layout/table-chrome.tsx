@@ -1,9 +1,40 @@
 import { Button } from "@nocoo/basalt";
 import { SlotBarChart } from "@nocoo/basalt/charts/slot-bar";
-import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
-import { takeChips } from "../../lib/format";
+import { ArrowDown, ArrowUp, ArrowUpDown, Clock3 } from "lucide-react";
+import { formatPreciseDate, formatTimeAgo, takeChips } from "../../lib/format";
 import { UserChip } from "../github-user";
 import { CandyBadge } from "./candy-badge";
+
+export function RelativeTime({
+	value,
+	now,
+	withIcon = false,
+}: {
+	value: string | null | undefined;
+	now?: number;
+	withIcon?: boolean;
+}) {
+	const timestamp = value ? Date.parse(value) : Number.NaN;
+	if (!value || !Number.isFinite(timestamp)) {
+		return <span className="text-basalt-muted-foreground">—</span>;
+	}
+	const relative = formatTimeAgo(value, now ?? Date.now(), true);
+	const full = formatPreciseDate(value);
+	return (
+		<span className="inline-flex items-center justify-end gap-1.5 whitespace-nowrap tabular-nums">
+			{withIcon ? (
+				<Clock3
+					className="size-3.5 shrink-0 text-basalt-muted-foreground"
+					strokeWidth={1.5}
+					aria-hidden="true"
+				/>
+			) : null}
+			<time dateTime={value} title={full}>
+				{relative}
+			</time>
+		</span>
+	);
+}
 
 export function SortButton({
 	label,

@@ -19,7 +19,7 @@ import { TableSkeleton } from "../components/layout/page-skeleton";
 import { useRefreshModel } from "../components/layout/refresh-provider";
 import { INLINE_SEGMENT } from "../components/layout/segment";
 import { SelectField } from "../components/layout/select-field";
-import { LabelChips, PersonCell } from "../components/layout/table-chrome";
+import { LabelChips, PersonCell, RelativeTime } from "../components/layout/table-chrome";
 import {
 	DATE_CELL,
 	formatConclusion,
@@ -102,7 +102,11 @@ function ReviewCell({ event }: { event: FactoryEvent }) {
 }
 
 function TimeCell({ value }: { value: string | null | undefined }) {
-	return <span className={DATE_CELL}>{value ? formatDate(value) : "—"}</span>;
+	return (
+		<span className={DATE_CELL}>
+			<RelativeTime value={value} />
+		</span>
+	);
 }
 
 const SEVERITY_TONES = {

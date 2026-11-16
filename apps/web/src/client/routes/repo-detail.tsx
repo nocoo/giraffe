@@ -59,7 +59,12 @@ import {
 import { ProjectLinks, ProjectName } from "../components/layout/project-identity";
 import { RefreshControl } from "../components/layout/refresh-control";
 import { SnapshotPending } from "../components/layout/snapshot-pending";
-import { ChurnMeter, LabelChips, PersonCell } from "../components/layout/table-chrome";
+import {
+	ChurnMeter,
+	LabelChips,
+	PersonCell,
+	RelativeTime,
+} from "../components/layout/table-chrome";
 import { useProjectIdentity } from "../components/layout/use-project-identity";
 import { useSnapshotRead } from "../components/layout/use-snapshot-read";
 import { RepoAgentStateCard } from "../components/repo-agent-state";
@@ -642,11 +647,8 @@ export function RepoDetailPage() {
 								<Table className="giraffe-data-table min-w-[680px]">
 									<TableHeader>
 										<TableRow>
-											<TableHead data-grow>名称</TableHead>
-											<TableHead>状态</TableHead>
-											<TableHead>结论</TableHead>
-											<TableHead>事件</TableHead>
-											<TableHead>分支</TableHead>
+											<TableHead data-grow>工作流</TableHead>
+											<TableHead>结果</TableHead>
 											<TableHead className={NUM_HEAD}>更新</TableHead>
 										</TableRow>
 									</TableHeader>
@@ -654,25 +656,32 @@ export function RepoDetailPage() {
 										{actions.runs.map((run) => (
 											<TableRow key={run.id}>
 												<TableCell>
-													<Link href={run.html_url} target="_blank" rel="noreferrer">
+													<Link
+														href={run.html_url}
+														target="_blank"
+														rel="noreferrer"
+														className="font-medium text-basalt-foreground hover:text-basalt-primary"
+													>
 														{run.name}
 													</Link>
+													<div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-basalt-muted-foreground">
+														<CandyBadge tone="indigo">{run.event}</CandyBadge>
+														<Code>{run.head_branch ?? "—"}</Code>
+													</div>
 												</TableCell>
 												<TableCell>
-													<CandyBadge tone="gray">{formatRunStatus(run.status)}</CandyBadge>
+													<div className="flex flex-wrap items-center gap-1.5">
+														<CandyBadge tone={conclusionBadgeVariant(run.conclusion)}>
+															{formatConclusion(run.conclusion)}
+														</CandyBadge>
+														{run.status !== "completed" ? (
+															<CandyBadge tone="gray">{formatRunStatus(run.status)}</CandyBadge>
+														) : null}
+													</div>
 												</TableCell>
-												<TableCell>
-													<CandyBadge tone={conclusionBadgeVariant(run.conclusion)}>
-														{formatConclusion(run.conclusion)}
-													</CandyBadge>
+												<TableCell className={DATE_CELL}>
+													<RelativeTime value={run.updated_at} />
 												</TableCell>
-												<TableCell>
-													<CandyBadge tone="indigo">{run.event}</CandyBadge>
-												</TableCell>
-												<TableCell>
-													<Code>{run.head_branch ?? "—"}</Code>
-												</TableCell>
-												<TableCell className={DATE_CELL}>{formatDate(run.updated_at)}</TableCell>
 											</TableRow>
 										))}
 									</TableBody>
@@ -737,22 +746,28 @@ export function RepoDetailPage() {
 								<Table className="giraffe-data-table min-w-[680px]">
 									<TableHeader>
 										<TableRow>
-											<TableHead data-grow>标签</TableHead>
-											<TableHead className={NUM_HEAD}>时间</TableHead>
-											<TableHead>预发布</TableHead>
+											<TableHead data-grow>版本</TableHead>
+											<TableHead className={NUM_HEAD}>发布时间</TableHead>
 										</TableRow>
 									</TableHeader>
 									<TableBody>
 										{releases.releases.map((row) => (
 											<TableRow key={row.id}>
 												<TableCell>
-													<Link href={row.html_url} target="_blank" rel="noreferrer">
-														{row.tag_name}
-													</Link>
+													<div className="flex flex-wrap items-center gap-2">
+														<Link
+															href={row.html_url}
+															target="_blank"
+															rel="noreferrer"
+															className="font-medium text-basalt-foreground hover:text-basalt-primary"
+														>
+															{row.tag_name}
+														</Link>
+														{row.prerelease ? <CandyBadge tone="amber">预发布</CandyBadge> : null}
+													</div>
 												</TableCell>
-												<TableCell className={DATE_CELL}>{formatDate(row.published_at)}</TableCell>
-												<TableCell>
-													{row.prerelease ? <CandyBadge tone="amber">预发布</CandyBadge> : "—"}
+												<TableCell className={DATE_CELL}>
+													<RelativeTime value={row.published_at} />
 												</TableCell>
 											</TableRow>
 										))}
@@ -844,7 +859,6 @@ export function RepoDetailPage() {
 										<TableHead data-grow>标题</TableHead>
 										<TableHead>标签</TableHead>
 										<TableHead>作者</TableHead>
-										<TableHead className={NUM_HEAD}>评论</TableHead>
 										<TableHead className={NUM_HEAD}>更新</TableHead>
 									</TableRow>
 								</TableHeader>
@@ -862,6 +876,9 @@ export function RepoDetailPage() {
 												</Link>
 												<p className="mt-1 text-xs tabular-nums text-basalt-muted-foreground">
 													#{row.number}
+													{row.comments_count > 0
+														? ` · ${formatCount(row.comments_count)} 评论`
+														: ""}
 												</p>
 											</TableCell>
 											<TableCell>
@@ -870,8 +887,9 @@ export function RepoDetailPage() {
 											<TableCell>
 												<PersonCell login={row.author_login} />
 											</TableCell>
-											<TableCell className={NUM_CELL}>{formatCount(row.comments_count)}</TableCell>
-											<TableCell className={DATE_CELL}>{formatDate(row.updated_at)}</TableCell>
+											<TableCell className={DATE_CELL}>
+												<RelativeTime value={row.updated_at} />
+											</TableCell>
 										</TableRow>
 									))}
 								</TableBody>
@@ -966,7 +984,9 @@ export function RepoDetailPage() {
 														</span>
 													</div>
 												</TableCell>
-												<TableCell className={DATE_CELL}>{formatDate(row.updated_at)}</TableCell>
+												<TableCell className={DATE_CELL}>
+													<RelativeTime value={row.updated_at} />
+												</TableCell>
 											</TableRow>
 										);
 									})}
