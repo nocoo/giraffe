@@ -2,6 +2,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ensureDevVars } from "./ensure-dev-vars";
 import { ensureLocalSchema } from "./local-d1";
+import { seedLocalDemoIfEmpty } from "./seed-local";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const wranglerBin = join(root, "node_modules/.bin/wrangler");
@@ -9,6 +10,7 @@ const viteBin = join(root, "node_modules/.bin/vite");
 
 ensureDevVars(root);
 ensureLocalSchema();
+seedLocalDemoIfEmpty();
 
 const wrangler = Bun.spawn([wranglerBin, "dev", "--local", "--port", "37045"], {
 	cwd: root,
