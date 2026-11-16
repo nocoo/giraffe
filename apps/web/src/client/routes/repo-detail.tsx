@@ -1067,7 +1067,7 @@ export function RepoDetailPage() {
 							<EmptyState
 								icon={<Code2 />}
 								title="还没有语言统计"
-								description="已保存快照中没有语言数据；未采集时保持缺失，不代表仓库没有语言。"
+								description="暂无语言快照。"
 								action={
 									<Button asChild size="sm" variant="secondary">
 										<Link href={snap.url} target="_blank" rel="noreferrer">

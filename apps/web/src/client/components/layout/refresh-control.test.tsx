@@ -129,7 +129,7 @@ it("offers one account refresh with yesterday, star/new selection and external s
 	await act(async () => vi.advanceTimersByTimeAsync(3000));
 	expect(document.body.textContent).toContain("部分完成");
 	expect(document.body.textContent).toContain("github_error");
-	expect(document.body.textContent).toContain("缺失不代表零");
+	expect(document.body.textContent).toContain("部分来源缺少数据");
 	expect(load).toHaveBeenCalledTimes(2);
 });
 

@@ -17,7 +17,7 @@ export function FactoryEmpty() {
 		<div className="factory-board">
 			<FactoryPanel title="暂无已保存的快照" hint="使用当前 GitHub 账号">
 				<p className="text-sm text-basalt-muted-foreground">
-					可从顶部发起统一刷新，先读取账号信息，再串行刷新星标与新发现的仓库。缺少数据不代表没有活动。
+					可从顶部发起统一刷新，先读取账号信息，再串行刷新星标与新发现的仓库。
 				</p>
 			</FactoryPanel>
 			<section className="factory-period" aria-label="区间变化">
@@ -84,7 +84,7 @@ export function FactoryEmpty() {
 				</div>
 				<div className="grid gap-3 xl:grid-cols-[1.3fr_1fr]">
 					{["需要检查的信号", "依赖与维护"].map((title) => (
-						<FactoryPanel key={title} title={title} hint="缺少数据不代表没有问题。">
+						<FactoryPanel key={title} title={title} hint="暂无已保存的观测">
 							<p className="py-4 text-sm text-basalt-muted-foreground">暂无已保存数据</p>
 						</FactoryPanel>
 					))}
@@ -123,10 +123,6 @@ export function FactoryEmpty() {
 			<details className="factory-methods" id="factory-ledger">
 				<summary>每日账本 · 可访问的图表数据与趋势核对</summary>
 				<p>暂无已保存的每日记录。</p>
-			</details>
-			<details className="factory-methods">
-				<summary>来源、口径与不确定性</summary>
-				<p>尚未保存来源、覆盖与观测窗口；缺少数据不代表零。</p>
 			</details>
 		</div>
 	);

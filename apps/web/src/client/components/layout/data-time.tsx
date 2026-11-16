@@ -94,16 +94,13 @@ export function DataTimeControl() {
 				<p className="text-sm font-medium tabular-nums">
 					最近更新：{formatPreciseDate(summary.latestAt)}
 				</p>
-				<p className="text-xs text-basalt-muted-foreground">
-					当前页面已保存快照的数据时间，不代表所有数据都已更新。
-				</p>
 				{summary.mixed ? (
-					<p className="text-sm" role="note">
-						部分数据仍来自较早的刷新，请查看各项时间。
+					<p className="text-sm text-basalt-muted-foreground" role="note">
+						部分数据来自较早的刷新。
 					</p>
 				) : null}
 				{summary.incomplete ? (
-					<p className="text-sm" role="note">
+					<p className="text-sm text-basalt-muted-foreground" role="note">
 						部分来源尚未采集或缺少数据。
 					</p>
 				) : null}

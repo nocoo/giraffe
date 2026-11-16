@@ -40,10 +40,7 @@ export function CompactRepoActivity({ snapshot }: { snapshot: ActivitySnapshot }
 						/>
 						当次窗口
 						<HelpTooltip label="当次窗口说明">
-							<p>北京时间，起点不含、终点包含。</p>
-							<p>窗口延伸至上次成功刷新；缺失日期或失败运行不算无活动。</p>
-							<p>首次窗口仅覆盖已采集的有限回看范围，不代表此前没有活动。</p>
-							<p>已保存的部分数据不是完整总数。</p>
+							<p>北京时间，起点不含、终点包含；覆盖至上次成功刷新。</p>
 						</HelpTooltip>
 					</h2>
 					<span className="flex items-center gap-1.5 tabular-nums">
@@ -79,7 +76,7 @@ export function CompactRepoActivity({ snapshot }: { snapshot: ActivitySnapshot }
 			/>
 			{incomplete ? (
 				<p className="text-xs text-basalt-muted-foreground" role="note">
-					部分区块记录不完整，不代表窗口内没有活动；各区块数量仅为下界。
+					部分区块记录不完整，各区块数量仅为下界。
 				</p>
 			) : null}
 			<div className="grid min-w-0 gap-basalt-layout-sm sm:grid-cols-2 xl:grid-cols-3">
@@ -111,9 +108,7 @@ export function CompactRepoActivity({ snapshot }: { snapshot: ActivitySnapshot }
 			{snapshot.repos.length === 0 ? (
 				<LayerCard padding="md">
 					<p className="text-sm text-basalt-muted-foreground">
-						{snapshot.truncated
-							? "该仓库的活动记录未完整保存，不代表没有活动。"
-							: "已保存的活动窗口不包含该仓库，不代表没有活动。"}
+						{snapshot.truncated ? "该仓库的活动记录未完整保存。" : "已保存的活动窗口不包含该仓库。"}
 					</p>
 				</LayerCard>
 			) : null}

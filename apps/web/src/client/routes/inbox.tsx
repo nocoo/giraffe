@@ -246,7 +246,7 @@ export function InboxPage() {
 							<EmptyState
 								icon={<Inbox />}
 								title={snap.notifications.length ? "没有符合筛选的通知" : "收件箱为空"}
-								description="这里仅显示已保存的通知；统一刷新不采集通知，缺失不代表没有新通知。"
+								description="仅显示已保存的通知。"
 								action={
 									snap.notifications.length ? (
 										<Button
