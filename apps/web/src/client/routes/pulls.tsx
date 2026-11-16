@@ -12,7 +12,7 @@ import {
 	TableRow,
 } from "@nocoo/basalt/components/table";
 import { Clock3, GitPullRequest } from "lucide-react";
-import { useMemo, useState } from "react";
+import { type CSSProperties, useMemo, useState } from "react";
 import type { FactoryViewSnapshot } from "../../lib/factory-types";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ChartBrick } from "../components/layout/chart-brick";
@@ -135,7 +135,7 @@ export function PullsPage() {
 				/>
 				<ListPageSkeleton
 					label="加载 Pull Requests"
-					cards={["bars", "rank", "columns"]}
+					cards={["bars", "columns", "rank", "rank"]}
 					columns={5}
 				/>
 			</div>
@@ -231,7 +231,7 @@ export function PullsPage() {
 			</div>
 			{board.total ? (
 				<>
-					<div className="giraffe-overview">
+					<div className="giraffe-overview" style={{ "--cols": history ? 4 : 3 } as CSSProperties}>
 						<OverviewCard
 							title="审查状态"
 							hint="草稿、待审查、需修改、已批准与未标记，点击图例下方的状态筛选。"
