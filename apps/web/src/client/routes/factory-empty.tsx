@@ -99,7 +99,7 @@ export function FactoryEmpty() {
 									"仓库 / 语言",
 									"观测窗口节奏",
 									"提交",
-									"Open I / PR",
+									"Issue / PR",
 									"合并 PR",
 									"CI 成功 / 判定",
 									"发布",

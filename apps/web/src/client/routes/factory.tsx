@@ -815,7 +815,7 @@ export function FactoryPage() {
 													{formatDate(board.days.at(-1)?.date).slice(5, 10)}
 												</TableHead>
 												<TableHead className="text-right">提交</TableHead>
-												<TableHead className="text-right">Open I / PR</TableHead>
+												<TableHead className="text-right">Issue / PR</TableHead>
 												<TableHead className="text-right">合并 PR</TableHead>
 												<TableHead className="text-right">CI 成功 / 判定</TableHead>
 												<TableHead className="text-right">发布</TableHead>
