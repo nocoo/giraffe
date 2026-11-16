@@ -89,7 +89,9 @@ test("today truncated and unavailable sources never claim a successful zero", as
 	await expect(page.getByTestId("activity-window")).toContainText("数据已截断");
 	await expect(page.getByTestId("activity-merged")).toContainText("未知");
 	await expect(page.getByTestId("activity-deploy")).toContainText("未知");
-	await expect(page.getByTestId("activity-releases")).toContainText("不代表窗口内没有活动");
+	await expect(page.getByTestId("activity-releases")).toContainText(
+		"记录不完整，当前数量仅为下界。",
+	);
 	await expect(page.getByText("窗口内没有记录", { exact: true })).toHaveCount(0);
 });
 
