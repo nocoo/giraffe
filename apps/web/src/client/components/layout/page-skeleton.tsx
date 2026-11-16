@@ -1,21 +1,11 @@
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { SkeletonLine } from "@nocoo/basalt/components/skeleton-line";
-import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 const CHART_BARS = [32, 48, 40, 67, 55, 84, 69, 78] as const;
 
-function useDeferredReveal(delayMs = 200): boolean {
-	const [show, setShow] = useState(false);
-	useEffect(() => {
-		const id = window.setTimeout(() => setShow(true), delayMs);
-		return () => window.clearTimeout(id);
-	}, [delayMs]);
-	return show;
-}
-
 export function Deferred({ children }: { children: ReactNode }) {
-	const show = useDeferredReveal();
-	return <div className={show ? undefined : "invisible"}>{children}</div>;
+	return <>{children}</>;
 }
 
 function range(count: number, prefix: string) {
