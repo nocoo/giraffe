@@ -44,7 +44,7 @@ import {
 	ShieldAlert,
 	Workflow,
 	Wrench,
-} from "lucide-react";
+} from "@nocoo/basalt/icons";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { APP_VERSION } from "../../../lib/version";
@@ -126,7 +126,7 @@ export function PersistedSidebarProvider({ children }: { children: ReactNode }) 
 	);
 
 	return (
-		<SidebarProvider collapsed={collapsed} onCollapsedChange={onCollapsedChange} defaultWidth={260}>
+		<SidebarProvider collapsed={collapsed} onCollapsedChange={onCollapsedChange}>
 			{children}
 		</SidebarProvider>
 	);

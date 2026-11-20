@@ -21,7 +21,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "@nocoo/basalt/components/table";
-import { ExternalLink, KeyRound, ShieldCheck, Trash2, Users } from "lucide-react";
+import { ExternalLink, KeyRound, ShieldCheck, Trash2, Users } from "@nocoo/basalt/icons";
 import { type FormEvent, useEffect, useState } from "react";
 import { ApiTokens } from "../components/api-tokens";
 import { UserChip } from "../components/github-user";

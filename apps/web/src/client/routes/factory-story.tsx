@@ -2,14 +2,13 @@ import { SegmentControl } from "@nocoo/basalt";
 import {
 	ANIMATION_PROPS,
 	BAR_RADIUS,
+	ChartLegend,
+	ChartTooltipRow,
 	cartesianAxisProps,
 	chartTooltipProps,
 	GRID_PROPS,
-} from "@nocoo/basalt/charts/config";
-import { ChartFrame, ChartShell } from "@nocoo/basalt/charts/frame";
-import { ChartLegend } from "@nocoo/basalt/charts/legend";
-import { ChartTooltipRow } from "@nocoo/basalt/charts/tooltip";
-import { ArrowDownRight, ArrowRight, ArrowUpRight } from "lucide-react";
+} from "@nocoo/basalt/components/chart";
+import { ArrowDownRight, ArrowRight, ArrowUpRight } from "@nocoo/basalt/icons";
 import type { ReactNode } from "react";
 import {
 	Bar,
@@ -26,6 +25,7 @@ import {
 	YAxis,
 	ZAxis,
 } from "recharts";
+import { ChartFrame, ChartShell } from "../components/layout/charts";
 import { LanguageLabel } from "../components/layout/labels";
 import { categoryColor, FLOW_COLORS } from "../lib/chart-theme";
 import { formatDate, formatDayRange } from "../lib/format";

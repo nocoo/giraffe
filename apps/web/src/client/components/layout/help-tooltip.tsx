@@ -1,5 +1,5 @@
 import { Button, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@nocoo/basalt";
-import { Info } from "lucide-react";
+import { Info } from "@nocoo/basalt/icons";
 import { type ReactNode, useState } from "react";
 
 export function HelpTooltip({

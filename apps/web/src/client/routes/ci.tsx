@@ -20,7 +20,7 @@ import {
 	ShieldCheck,
 	Tag,
 	Workflow,
-} from "lucide-react";
+} from "@nocoo/basalt/icons";
 import { useMemo, useState } from "react";
 import { CI_IDLE_DAYS, CI_RECENT, type CiReportResponse } from "../../lib/ci-health";
 import { CandyBadge } from "../components/layout/candy-badge";

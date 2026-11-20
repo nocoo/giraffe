@@ -1,4 +1,4 @@
-import { CHART_COLORS } from "@nocoo/basalt/charts/palette";
+import { CHART_COLORS } from "@nocoo/basalt/components/chart";
 import { expect, it } from "vitest";
 import { categoryColor, chartColor, FLOW_COLORS } from "./chart-theme";
 

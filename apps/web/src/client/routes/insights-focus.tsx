@@ -10,7 +10,7 @@ import {
 	ShieldAlert,
 	Target,
 	Workflow,
-} from "lucide-react";
+} from "@nocoo/basalt/icons";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { EmptyState } from "../components/layout/empty-state";
 import { IconLabel } from "../components/layout/icon-label";

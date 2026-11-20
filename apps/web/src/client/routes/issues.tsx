@@ -11,7 +11,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "@nocoo/basalt/components/table";
-import { CircleDot, MessageSquare } from "lucide-react";
+import { CircleDot, MessageSquare } from "@nocoo/basalt/icons";
 import { useMemo, useState } from "react";
 import type { FactoryViewSnapshot } from "../../lib/factory-types";
 import { CandyBadge } from "../components/layout/candy-badge";

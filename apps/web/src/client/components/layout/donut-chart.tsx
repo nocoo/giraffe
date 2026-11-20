@@ -1,10 +1,24 @@
-import { ANIMATION_PROPS, chartTooltipProps } from "@nocoo/basalt/charts/config";
-import type { DonutChartProps } from "@nocoo/basalt/charts/donut";
-import { ChartShell } from "@nocoo/basalt/charts/frame";
-import { ChartLegend } from "@nocoo/basalt/charts/legend";
-import { formatChartNumber } from "@nocoo/basalt/charts/tooltip";
+import {
+	ANIMATION_PROPS,
+	type ChartAccessibilityProps,
+	ChartLegend,
+	type ChartSeriesDescriptor,
+	chartTooltipProps,
+	formatChartNumber,
+	type NamedValue,
+} from "@nocoo/basalt/components/chart";
 import { Cell, Pie, PieChart, Tooltip } from "recharts";
 import { chartColor } from "../../lib/chart-theme";
+import { ChartShell } from "./charts";
+
+type DonutChartProps = ChartAccessibilityProps & {
+	data: NamedValue[];
+	series?: ChartSeriesDescriptor[];
+	ariaLabel?: string;
+	className?: string;
+	showLegend?: boolean;
+	valueFormatter?: (value: number) => string;
+};
 
 // Basalt's stock donut fixes its radius at 48px. Keep its frame, legend and
 // tooltip, but size the Recharts ring relative to the available card space.

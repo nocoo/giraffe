@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.29.3 - 2026-11-20
+
+### Changed
+
+- Upgraded `@nocoo/basalt` to `^3.5.1` and removed direct `lucide-react` dependencies in favor of
+  `@nocoo/basalt/icons`.
+- Migrated all `@nocoo/basalt/charts/*` usages to `@nocoo/basalt/components/chart`,
+  `@nocoo/basalt/components/stat-card`, and app-owned Recharts components.
+- Simplified `apps/web/src/client/index.css` to the two-line `@import "@nocoo/basalt/styles";`
+  `@import "tailwindcss";` setup and aligned sidebar width to Basalt's `240px` default.
+
 ## v0.29.1 - 2026-11-10
 
 ### Changed

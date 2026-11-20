@@ -7,7 +7,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "@nocoo/basalt/components/table";
-import { Activity, Boxes } from "lucide-react";
+import { Activity, Boxes } from "@nocoo/basalt/icons";
 import { IconLabel } from "../components/layout/icon-label";
 import { Kpi, KpiRow } from "../components/layout/kpi";
 import { FactoryPanel } from "./factory-charts";

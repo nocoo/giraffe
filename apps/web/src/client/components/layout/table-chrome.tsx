@@ -1,9 +1,9 @@
 import { Button } from "@nocoo/basalt";
-import { SlotBarChart } from "@nocoo/basalt/charts/slot-bar";
-import { ArrowDown, ArrowUp, ArrowUpDown, Clock3 } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Clock3 } from "@nocoo/basalt/icons";
 import { formatPreciseDate, formatTimeAgo, takeChips } from "../../lib/format";
 import { UserChip } from "../github-user";
 import { CandyBadge } from "./candy-badge";
+import { SlotBarChart } from "./charts";
 
 export function RelativeTime({
 	value,

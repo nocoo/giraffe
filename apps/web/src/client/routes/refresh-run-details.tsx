@@ -20,7 +20,7 @@ import {
 	Minus,
 	Pause,
 	Square,
-} from "lucide-react";
+} from "@nocoo/basalt/icons";
 import type { RefreshDimension, RefreshRun } from "../../lib/refresh-types";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { EmptyState } from "../components/layout/empty-state";

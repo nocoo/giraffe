@@ -1,13 +1,12 @@
 import { Tooltip as BasaltTooltip, Button, TooltipContent, TooltipTrigger } from "@nocoo/basalt";
-import { ANIMATION_PROPS, chartTooltipProps } from "@nocoo/basalt/charts/config";
-import { ChartFrame } from "@nocoo/basalt/charts/frame";
-import { Sparkline } from "@nocoo/basalt/charts/sparkline";
+import { ANIMATION_PROPS, chartTooltipProps } from "@nocoo/basalt/components/chart";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { Text } from "@nocoo/basalt/components/text";
-import { ChartNoAxesCombined } from "lucide-react";
+import { ChartNoAxesCombined } from "@nocoo/basalt/icons";
 import type { ReactNode } from "react";
 import { Tooltip, Treemap } from "recharts";
 import type { FactoryRepo } from "../../lib/factory-types";
+import { ChartFrame, Sparkline } from "../components/layout/charts";
 import { HelpTooltip } from "../components/layout/help-tooltip";
 import { IconLabel } from "../components/layout/icon-label";
 import { categoryColor, chartColor } from "../lib/chart-theme";

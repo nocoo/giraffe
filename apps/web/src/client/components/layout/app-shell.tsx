@@ -6,7 +6,7 @@ import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { SidebarDrawer } from "@nocoo/basalt/components/sidebar";
 import { ThemeToggle } from "@nocoo/basalt/components/theme-toggle";
-import { ShieldAlert } from "lucide-react";
+import { ShieldAlert } from "@nocoo/basalt/icons";
 import { useEffect, useId, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import { subscribeErrorUi } from "../../lib/error-ui";

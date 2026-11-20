@@ -10,7 +10,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "@nocoo/basalt/components/table";
-import { Bug, ShieldAlert } from "lucide-react";
+import { Bug, ShieldAlert } from "@nocoo/basalt/icons";
 import { useMemo, useState } from "react";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ResultCount, TableScroll } from "../components/layout/collection-chrome";

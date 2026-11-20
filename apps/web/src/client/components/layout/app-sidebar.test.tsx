@@ -16,7 +16,7 @@ function sidebar(collapsed = false, path = "/factory") {
 		<MemoryRouter initialEntries={[path]}>
 			<LinkProvider render={RouterLink}>
 				<TooltipProvider>
-					<SidebarProvider collapsed={collapsed} defaultWidth={260}>
+					<SidebarProvider collapsed={collapsed}>
 						<AppSidebar ariaLabel="主导航" />
 					</SidebarProvider>
 				</TooltipProvider>

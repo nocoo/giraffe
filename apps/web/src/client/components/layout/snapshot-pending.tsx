@@ -1,5 +1,5 @@
 import { Button, Link } from "@nocoo/basalt";
-import { Clock3 } from "lucide-react";
+import { Clock3 } from "@nocoo/basalt/icons";
 import { missingTitle } from "../../lib/error-ui";
 import { EmptyState } from "./empty-state";
 

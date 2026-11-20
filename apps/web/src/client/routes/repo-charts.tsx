@@ -1,14 +1,14 @@
 import {
 	ANIMATION_PROPS,
 	BAR_RADIUS,
+	ChartLegend,
+	ChartTooltipRow,
 	cartesianAxisProps,
 	chartTooltipProps,
 	GRID_PROPS,
-} from "@nocoo/basalt/charts/config";
-import { ChartShell } from "@nocoo/basalt/charts/frame";
-import { ChartLegend } from "@nocoo/basalt/charts/legend";
-import { ChartTooltipRow } from "@nocoo/basalt/charts/tooltip";
+} from "@nocoo/basalt/components/chart";
 import { Bar, CartesianGrid, ComposedChart, Line, Tooltip, XAxis, YAxis } from "recharts";
+import { ChartShell } from "../components/layout/charts";
 import { FLOW_COLORS } from "../lib/chart-theme";
 import { formatCount, formatDate, formatDayRange } from "../lib/format";
 import type { repoActivityBoard, repoFactorySeries } from "../viewmodels/boards";

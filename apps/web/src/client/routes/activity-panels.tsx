@@ -17,7 +17,7 @@ import {
 	ScanSearch,
 	Tag,
 	Workflow,
-} from "lucide-react";
+} from "@nocoo/basalt/icons";
 import type { ActivitySnapshot } from "../../lib/activity-types";
 import { UserChip } from "../components/github-user";
 import { CandyBadge } from "../components/layout/candy-badge";

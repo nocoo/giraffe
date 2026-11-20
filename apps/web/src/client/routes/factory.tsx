@@ -19,7 +19,7 @@ import {
 	GitCommitHorizontal,
 	GitMerge,
 	Workflow,
-} from "lucide-react";
+} from "@nocoo/basalt/icons";
 import {
 	type CSSProperties,
 	useCallback,
