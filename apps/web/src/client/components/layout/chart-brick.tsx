@@ -1,6 +1,6 @@
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { Text } from "@nocoo/basalt/components/text";
-import { ChartNoAxesCombined } from "lucide-react";
+import { ChartNoAxesCombined } from "@nocoo/basalt/icons";
 import type { ReactNode } from "react";
 import { HelpTooltip } from "./help-tooltip";
 import { IconLabel } from "./icon-label";

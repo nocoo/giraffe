@@ -1,5 +1,4 @@
-import { getChartColor } from "@nocoo/basalt/charts/config";
-import { chart } from "@nocoo/basalt/charts/palette";
+import { chart, getChartColor } from "@nocoo/basalt/components/chart";
 
 const YELLOW = "var(--color-giraffe-yellow)";
 

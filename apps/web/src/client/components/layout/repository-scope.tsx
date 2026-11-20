@@ -1,5 +1,5 @@
 import { Button, SegmentControl } from "@nocoo/basalt";
-import { Star } from "lucide-react";
+import { Star } from "@nocoo/basalt/icons";
 import { useSyncExternalStore } from "react";
 import { Outlet } from "react-router";
 import {

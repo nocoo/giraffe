@@ -2,20 +2,20 @@ import { Button } from "@nocoo/basalt";
 import {
 	ANIMATION_PROPS,
 	BAR_RADIUS,
+	ChartLegend,
+	ChartTooltipRow,
 	cartesianAxisProps,
 	chartTooltipProps,
 	GRID_PROPS,
-} from "@nocoo/basalt/charts/config";
-import { ChartShell } from "@nocoo/basalt/charts/frame";
-import { ChartLegend } from "@nocoo/basalt/charts/legend";
-import { ChartTooltipRow } from "@nocoo/basalt/charts/tooltip";
+} from "@nocoo/basalt/components/chart";
 import { FilterChip } from "@nocoo/basalt/components/filter-bar";
-import { X } from "lucide-react";
+import { X } from "@nocoo/basalt/icons";
 import type { ReactNode } from "react";
 import { Bar, BarChart, CartesianGrid, Tooltip, XAxis, YAxis } from "recharts";
 import { formatCount } from "../../lib/format";
 import type { AGE_BUCKETS } from "../../viewmodels/overview";
 import { ChartBrick } from "./chart-brick";
+import { ChartShell } from "./charts";
 import { RankBars, type RankRow } from "./rank-bars";
 
 export const AGE_COLORS: Record<(typeof AGE_BUCKETS)[number]["key"], string> = {

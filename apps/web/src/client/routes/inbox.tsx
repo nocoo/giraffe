@@ -11,7 +11,7 @@ import {
 	TableRow,
 } from "@nocoo/basalt/components/table";
 import { TablePager } from "@nocoo/basalt/components/table-pager";
-import { Bell, CheckCheck, Inbox, MailCheck, MailOpen } from "lucide-react";
+import { Bell, CheckCheck, Inbox, MailCheck, MailOpen } from "@nocoo/basalt/icons";
 import { useMemo, useState } from "react";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ResultCount, TableScroll } from "../components/layout/collection-chrome";

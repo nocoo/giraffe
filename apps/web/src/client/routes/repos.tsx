@@ -19,7 +19,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "@nocoo/basalt/components/table";
-import { Box, Clock3, Star } from "lucide-react";
+import { Box, Clock3, Star } from "@nocoo/basalt/icons";
 import { type CSSProperties, useMemo, useState } from "react";
 import type { FactoryViewSnapshot } from "../../lib/factory-types";
 import { CandyBadge } from "../components/layout/candy-badge";

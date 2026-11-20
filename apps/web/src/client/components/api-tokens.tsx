@@ -1,7 +1,7 @@
 import { Button, Checkbox, Field, Input, Link } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
-import { Ban, Clock3, KeyRound, ListChecks, ShieldCheck, UserRound } from "lucide-react";
+import { Ban, Clock3, KeyRound, ListChecks, ShieldCheck, UserRound } from "@nocoo/basalt/icons";
 import { useEffect, useRef, useState } from "react";
 import { formatPreciseDate } from "../lib/format";
 import type { PublicAccount } from "../viewmodels/accounts";

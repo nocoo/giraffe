@@ -8,7 +8,7 @@ import {
 	DialogTitle,
 	DialogTrigger,
 } from "@nocoo/basalt/components/dialog";
-import { Clock3, X } from "lucide-react";
+import { Clock3, X } from "@nocoo/basalt/icons";
 import { useEffect, useState } from "react";
 import type { FactoryRepo } from "../../lib/factory-types";
 import { ProjectLabel } from "../components/layout/project-identity";

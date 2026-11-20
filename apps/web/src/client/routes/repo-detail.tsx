@@ -1,5 +1,4 @@
 import { Button, Link, Tabs, TabsContent, TabsList, TabsTrigger, toast } from "@nocoo/basalt";
-import { AreaChart } from "@nocoo/basalt/charts/area";
 import { Code } from "@nocoo/basalt/components/code";
 import { DescriptionList } from "@nocoo/basalt/components/description-list";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
@@ -32,7 +31,7 @@ import {
 	Star,
 	Tag,
 	Users,
-} from "lucide-react";
+} from "@nocoo/basalt/icons";
 import { type ReactNode, useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router";
 import {
@@ -44,6 +43,7 @@ import {
 import { UserChip } from "../components/github-user";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ChartBrick, ChartEmpty, ChartRow } from "../components/layout/chart-brick";
+import { AreaChart } from "../components/layout/charts";
 import { TableScroll } from "../components/layout/collection-chrome";
 import { DataTimeSource } from "../components/layout/data-time";
 import { DonutChart } from "../components/layout/donut-chart";

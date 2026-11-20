@@ -5,7 +5,7 @@ import {
 	PopoverTitle,
 	PopoverTrigger,
 } from "@nocoo/basalt/components/popover";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw } from "@nocoo/basalt/icons";
 import { useId, useState, useSyncExternalStore } from "react";
 import { REFRESH_DIMENSIONS } from "../../../lib/refresh-types";
 import { formatDate } from "../../lib/format";

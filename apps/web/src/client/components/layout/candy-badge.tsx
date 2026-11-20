@@ -1,5 +1,5 @@
 import { Badge } from "@nocoo/basalt";
-import type { LucideIcon } from "lucide-react";
+import type { LucideIcon } from "@nocoo/basalt/icons";
 import type { ComponentProps } from "react";
 import { type CandyTone, candyClass } from "../../lib/format";
 

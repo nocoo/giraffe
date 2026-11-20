@@ -1,5 +1,5 @@
 import { Button, Link } from "@nocoo/basalt";
-import { Archive, BookOpen, Box, ExternalLink, Globe } from "lucide-react";
+import { Archive, BookOpen, Box, ExternalLink, Globe } from "@nocoo/basalt/icons";
 import { type ReactNode, useState } from "react";
 import type { ProjectIdentity } from "../../../lib/project-identity";
 import { CandyBadge } from "./candy-badge";

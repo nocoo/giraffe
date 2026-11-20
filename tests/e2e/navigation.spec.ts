@@ -192,7 +192,7 @@ for (const width of [1440, 390, 640]) {
 			});
 			if (width < 768) await opener.click();
 			const sidebar = page.getByRole("complementary");
-			await expect(sidebar).toHaveCSS("width", "260px");
+			await expect(sidebar).toHaveCSS("width", "240px");
 			const avatar = sidebar.locator('[data-slot="sidebar-user"] > span');
 			await expect(avatar).toHaveCSS("width", "36px");
 			await expect(avatar).toHaveCSS("height", "36px");
@@ -205,8 +205,8 @@ for (const width of [1440, 390, 640]) {
 			);
 			if (width < 768) {
 				const drawer = page.locator('[data-slot="sidebar-drawer"]');
-				await expect(drawer).toHaveCSS("width", "260px");
-				await expect(drawer.locator("[data-basalt-sidebar]")).toHaveCSS("width", "260px");
+				await expect(drawer).toHaveCSS("width", "240px");
+				await expect(drawer.locator("[data-basalt-sidebar]")).toHaveCSS("width", "240px");
 				await expect(drawer).toHaveCSS("padding-left", "0px");
 				await expect(drawer).toHaveCSS("padding-right", "0px");
 				await expect(drawer).toHaveCSS("padding-top", "0px");

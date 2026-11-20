@@ -1,5 +1,5 @@
-import { StatCard } from "@nocoo/basalt/charts/stat-card";
-import type { LucideIcon } from "lucide-react";
+import { StatCard } from "@nocoo/basalt/components/stat-card";
+import type { LucideIcon } from "@nocoo/basalt/icons";
 import type { ReactNode } from "react";
 
 export function Kpi({
@@ -15,13 +15,14 @@ export function Kpi({
 	subtitle?: string;
 	children?: ReactNode;
 }) {
+	const Icon = icon;
 	return (
 		<StatCard
 			className="giraffe-stat-card min-w-0"
 			title={label}
 			value={value}
 			{...(subtitle ? { subtitle } : {})}
-			{...(icon ? { icon } : {})}
+			{...(Icon ? { icon: <Icon /> } : {})}
 			iconColor="text-basalt-primary"
 		>
 			{children}

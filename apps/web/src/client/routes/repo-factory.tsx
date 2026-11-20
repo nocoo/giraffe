@@ -8,7 +8,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "@nocoo/basalt/components/table";
-import { ArrowUpRight, SearchX } from "lucide-react";
+import { ArrowUpRight, SearchX } from "@nocoo/basalt/icons";
 import { type ReactNode, useEffect, useState } from "react";
 import type { FactoryCoverage, FactoryEvent, FactoryStreamName } from "../../lib/factory-types";
 import { UserChip } from "../components/github-user";

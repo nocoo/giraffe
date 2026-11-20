@@ -1,6 +1,6 @@
 import { InputGroup } from "@nocoo/basalt/components/input-group";
 import { ScrollArea } from "@nocoo/basalt/components/scroll-area";
-import { Search, X } from "lucide-react";
+import { Search, X } from "@nocoo/basalt/icons";
 import { type ReactNode, useRef } from "react";
 import { formatCount } from "../../lib/format";
 

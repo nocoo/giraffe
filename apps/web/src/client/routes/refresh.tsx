@@ -22,7 +22,7 @@ import {
 	Play,
 	RefreshCw,
 	Square,
-} from "lucide-react";
+} from "@nocoo/basalt/icons";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { REFRESH_DIMENSIONS, type RefreshRun } from "../../lib/refresh-types";
 import { CandyBadge } from "../components/layout/candy-badge";

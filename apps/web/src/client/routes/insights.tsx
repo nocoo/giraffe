@@ -1,19 +1,29 @@
 import { Link, toast } from "@nocoo/basalt";
-import { BarChart } from "@nocoo/basalt/charts/bar";
-import { cartesianAxisProps, chartTooltipProps, GRID_PROPS } from "@nocoo/basalt/charts/config";
-import { ChartShell } from "@nocoo/basalt/charts/frame";
-import { ChartLegend } from "@nocoo/basalt/charts/legend";
-import { StackedBarChart } from "@nocoo/basalt/charts/stacked-bar";
-import { ChartTooltipRow } from "@nocoo/basalt/charts/tooltip";
+import {
+	ChartLegend,
+	ChartTooltipRow,
+	cartesianAxisProps,
+	chartTooltipProps,
+	GRID_PROPS,
+} from "@nocoo/basalt/components/chart";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
-import { Activity, Box, CircleDot, Eye, GitPullRequest, Layers3, ShieldCheck } from "lucide-react";
+import {
+	Activity,
+	Box,
+	CircleDot,
+	Eye,
+	GitPullRequest,
+	Layers3,
+	ShieldCheck,
+} from "@nocoo/basalt/icons";
 import { useMemo, useState } from "react";
 import { CartesianGrid, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
 import type { FactoryViewSnapshot } from "../../lib/factory-types";
 import { CandyBadge } from "../components/layout/candy-badge";
 import { ChartBrick, ChartEmpty, ChartRow } from "../components/layout/chart-brick";
+import { BarChart, ChartShell, StackedBarChart } from "../components/layout/charts";
 import { DataTimeSource } from "../components/layout/data-time";
 import { DonutChart } from "../components/layout/donut-chart";
 import { IconLabel } from "../components/layout/icon-label";

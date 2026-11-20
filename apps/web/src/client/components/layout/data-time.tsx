@@ -5,7 +5,7 @@ import {
 	PopoverTitle,
 	PopoverTrigger,
 } from "@nocoo/basalt/components/popover";
-import { ChevronDown, Clock3 } from "lucide-react";
+import { ChevronDown, Clock3 } from "@nocoo/basalt/icons";
 import {
 	createContext,
 	type ReactNode,

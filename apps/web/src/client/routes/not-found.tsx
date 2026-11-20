@@ -1,7 +1,7 @@
 import { Button, Link } from "@nocoo/basalt";
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
-import { FileQuestion } from "lucide-react";
+import { FileQuestion } from "@nocoo/basalt/icons";
 import { EmptyState } from "../components/layout/empty-state";
 
 export function NotFoundPage() {

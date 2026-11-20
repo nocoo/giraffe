@@ -1,6 +1,6 @@
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
 import { StatStrip } from "@nocoo/basalt/components/stat-strip";
-import { CalendarDays, Clock3, Database } from "lucide-react";
+import { CalendarDays, Clock3, Database } from "@nocoo/basalt/icons";
 import type { ActivitySnapshot } from "../../lib/activity-types";
 import { DataTimeSource } from "../components/layout/data-time";
 import { HelpTooltip } from "../components/layout/help-tooltip";
