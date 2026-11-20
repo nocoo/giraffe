@@ -30,3 +30,5 @@ investigations describe retired implementations, not current execution paths.
 - [Phase 1 retirement: v0.26.0 behavior and verification](14-phase1-retirement.md)
 
 - [Phase 2 unified refresh: v0.27.2 execution, APIs and operations](15-unified-refresh.md)
+
+- [Release and deployment operations](16-release-operations.md)

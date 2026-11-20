@@ -1,121 +1,74 @@
 # Giraffe
 
-Bun monorepo: `apps/web` owns the Worker and SPA. Root `package.json` is the authoritative version and root commands run all web gates.
+Personal GitHub console (saved snapshots, inboxes, repo detail, factory observations) in a Bun monorepo (`apps/web`: Hono Cloudflare Worker + Vite React/Basalt SPA; D1 `giraffe-db` via `DB`, DO `RefreshRunner`). Root `package.json` owns `APP_VERSION` (`apps/web/src/lib/version.ts`); root commands run all web gates.
 
-Personal GitHub console with saved account snapshots, inboxes and repository detail.
-Profile: ts-worker-web.
-Direction: [unified refresh](docs/15-unified-refresh.md), [saved factory observations](docs/06-software-factory.md) and [quality](docs/02-quality.md). Frameworks must not rewrite this file.
+Docs: [README.md](README.md) · [Docs Index](docs/README.md) · [Unified Refresh](docs/15-unified-refresh.md) · [Software Factory](docs/06-software-factory.md) · [Machine API](docs/11-agent-api.md) · [Server](docs/04-server.md) · [Quality](docs/02-quality.md) · [Release Ops](docs/16-release-operations.md) · [Retrospective](Retrospective.md)
 
-## Scope and instruction sources
+## Commands
 
-- This file is the only project handbook; nested files do not compete with it. Do not create a `CLAUDE.md` alias or copy.
-- This file is the contract; hooks, CI and configuration enforce it. Raise weaker enforcement instead of lowering this contract.
-- Human docs: [README.md](README.md) and the [docs index](docs/README.md). Version: `package.json`, read through `apps/web/src/lib/version.ts` as `APP_VERSION`. Enforcement: `.husky/`, CI/release workflows, Vitest/Playwright configs and `scripts/gate-*.ts`. Local secrets: ignored `.dev.vars` initialized from `dev.vars.example`; test runners generate their own env files. Machine rules/accidents: global `AGENTS.md` and `rules/`; [Retrospective.md](Retrospective.md).
+Run from root (TypeScript 7 strict, Bun 1.4, Node >=22.23.4). Layout: `apps/web/src/{server,lib,client}/`, `tests/{api,e2e}/`, `scripts/`, `migrations/`, `docs/`. Daily dev uses ignored `.dev.vars` (seeded from `dev.vars.example` without overwriting; replace placeholder `TOKEN_ENCRYPTION_KEY_V1` before storing a real PAT, keep `TOKEN_ENCRYPTION_KEY_CURRENT=1`); test runners generate isolated env files. L4 needs Chromium (`bunx playwright install chromium`); `gate:security` needs `gitleaks` and `osv-scanner`.
 
-## Project invariants
-
-- Plaintext classic GitHub PAT exists only in the settings input until submission, that request body, decrypted Worker memory and outbound Authorization. Never persist, bundle, log, trace or return it. D1 stores AES-GCM envelopes; error records store safe codes, not raw upstream failures.
-- `workers_dev = false`; Cloudflare Access validates JWT issuer/audience/JWKS. There is no in-app login. Authorized users of one deployment share its accounts/snapshots; do not claim per-user tenancy.
-- Browser calls go through `apps/web/src/client/lib/api.ts` using relative `/api/` URLs; GitHub calls use `createGithubClient(env)`. Production ignores fixture GitHub/JWKS overrides. GET snapshots are read-only and must not silently fetch upstream or write data.
-- Server tests must not import the client. Viewmodels stay free of View/DOM imports and views/routes stay thin. The React/Basalt client now exists; historical phase-1 exclusions are no longer the current project scope.
-- Automated tests use local Wrangler/SQLite and GitHub/JWKS stubs, never real PATs, daily `.dev.vars` or `api.github.com`. Never use remote D1 or deploy remote `-test` resources.
-- Phase 2 authorizes one durable A-then-serial-B refresh, the 03:00 Asia/Shanghai starred schedule and explicit single-repository refresh. New repositories get initial observations without auto-starring. Cache complete repo×day×dimension observations by stable identity and timezone; preserve timestamps and missingness. Only new refresh tables feed observations, with no legacy data migration/fallback. Legacy quick/deep/full modes, queues and analysis UI stay removed. Details: [refresh contract](docs/15-unified-refresh.md).
-- Ad-hoc `lookbackDays` refreshes backfill closed Shanghai calendar days for locally starred repositories only, without the new-repository exception. Reuse complete caches including terminal unavailable days unless forced. Callers must not start backfills from 00:50 Asia/Shanghai until that day's scheduled daily refresh finishes; this blackout is operational, not server-enforced.
-- Keep strict TDD: failing tests remain in the working tree; commits pass current L1. Never skip hooks to publish a failing change.
-
-## Setup and commands
-
-TypeScript 7 strict, Bun 1.4, Node ≥22.23.4; Hono Cloudflare Worker. Vite React/Basalt SPA; D1 `giraffe-db` through `DB`. Biome and AST boundary gates; Vitest/V8, real HTTP and Playwright Chromium. `apps/web/src/server/` and `apps/web/src/lib/` hold API, Access, encrypted accounts, GitHub collection, storage and shared types; `apps/web/src/client/` and `tests/{api,e2e}/` hold routes/viewmodels and API/browser journeys; `scripts/`, `migrations/`, `docs/` hold runners, schema evolution and numbered design/runbooks.
-
-Run from the root. API/browser runners generate fake keys and test configuration without `.dev.vars`. Install Chromium for browser checks; Gitleaks and OSV Scanner are required by push gates.
-
-```bash
-bun install --frozen-lockfile
-bun run typecheck
-bun run lint
-bun run build
-bun run gate:test-skip
-bun run gate:wrangler-vars
-bun run gate:github-fetch
-bun run gate:client-fetch
-bun run test:coverage
-bun run test:e2e:api
-bun run test:e2e:bdd
-bun run gate:security
+```sh
+bun install --frozen-lockfile  # deps + restore .husky/
+bun run dev                    # Vite 7045 + Worker 37045 (giraffe.dev.hexly.ai; real GitHub)
+bun run dev:server             # API-only Worker on 7045
+bun run typecheck              # S1: 3 TS configs + wrangler types
+bun run lint                   # S2: Biome check-only, 0 warnings
+bun run gate:test-skip         # S2: no skipped/focused tests
+bun run gate:wrangler-vars     # S2: wrangler.toml var/env boundaries
+bun run gate:github-fetch      # S2: GitHub outbound fetch boundary
+bun run gate:client-fetch      # S2: client /api/ fetch boundary
+bun run build                  # B1: PWA icons + dist/client
+bun run test:coverage          # L1: Vitest/V8 >= 95% all 4 metrics
+bun run test:e2e:api           # L3: local HTTP functional A + JWT B
+bun run test:e2e:bdd           # L4: Playwright Chromium on built SPA
+bun run gate:security          # G1/G2: Gitleaks + OSV (missing tool fails)
 ```
 
-For daily development, prepare `.dev.vars` from the example without overwriting an existing file. Replace the public `TOKEN_ENCRYPTION_KEY_V1` example before storing any real PAT and keep `TOKEN_ENCRYPTION_KEY_CURRENT=1`; `bun run dev` starts local Vite/Worker, while `bun run dev:server` starts the API lane. Development GitHub traffic still reaches the real service.
+## Invariants
 
-## Testing and quality contract
+- **PAT secrecy**: Plaintext classic GitHub PAT exists only in the settings input until submit, that request body, decrypted Worker memory, and outbound `Authorization`; never persist, bundle, log, trace, or return it.
+- **Encryption & errors**: D1 stores PATs as AES-GCM envelopes; error records store safe codes, never raw upstream failures.
+- **Access & tenancy**: `workers_dev = false` and `preview_urls = false`; Cloudflare Access validates JWT `iss`/`aud`/JWKS with no in-app login. Users of one deployment share accounts/snapshots (not per-user tenancy).
+- **Fetch boundaries**: Browser calls use `apps/web/src/client/lib/api.ts` with relative `/api/` URLs; GitHub calls use `createGithubClient(env)`. Production ignores fixture GitHub/JWKS overrides.
+- **Read-only GET**: Snapshot and observation GET routes never silently fetch upstream, write data, or record token activity.
+- **Layer boundaries**: Server tests must not import `apps/web/src/client`. Viewmodels stay free of View/DOM imports and views/routes stay thin.
+- **Test isolation**: Automated tests use local Wrangler/SQLite and GitHub/JWKS stubs, never real PATs, daily `.dev.vars`, `api.github.com`, remote D1, or remote `-test` resources.
+- **Phase 2 refresh**: One durable A-then-serial-B refresh (`RefreshRunner`), 03:00 Asia/Shanghai starred cron (`0 19 * * *`), and explicit single-repo refresh; new repos get initial observations without auto-starring.
+- **Observation cache**: Cache complete repo×day×dimension observations by stable identity/timezone preserving timestamps and missingness; only new refresh tables feed observations (no legacy migration/fallback).
+- **Retired collection**: Legacy quick/deep/full modes, queues, and analysis UI stay removed; see [docs/15-unified-refresh.md](docs/15-unified-refresh.md).
+- **Ad-hoc `lookbackDays` backfill**: Backfills closed Shanghai days for locally starred repos only (no new-repo exception), reusing complete and terminal-unavailable caches unless forced.
+- **Backfill blackout (operational)**: Callers must not start backfills from 00:50 Asia/Shanghai until that day's scheduled daily refresh finishes; this window is operational, not server-enforced.
+- **Machine API auth**: Every `/api/v1/*` call needs a Worker-enforced hash-only, fixed-account, scoped, expiring bearer token (no tokenless routes); Access bypass applies only to `/api/v1/*`, never the dashboard.
+- **Machine tokens**: Browser token UI is Access-protected and writes require same-origin; tokens expire <=90d (rotate before expiry), return raw only at mint, and never enter logs, URLs, storage, or D1.
+- **Machine resources**: Agent records/reports/jobs are mutable local revisioned resources; GitHub observations and factory publications stay read-only. Contract: [docs/11-agent-api.md](docs/11-agent-api.md).
+- **No bundled analysis**: `/analysis`, analysis projections, model inference/settings, and code-execution routes stay removed; external producers call `/api/v1/*` without model secrets (legacy AI tables untouched).
+- **Strict TDD & contract**: Keep failing tests in the working tree; commits pass current L1; never skip hooks (`--no-verify`). Raise weaker enforcement rather than lowering this contract.
+- **Auto-deploy**: Green `CI` on `main` triggers `.github/workflows/release.yml` (merging a PR deploys); never deploy concurrently from a laptop. Runbook: [release ops](docs/16-release-operations.md).
+- **Additive migrations**: Apply additive D1 migrations before dependent code and verify factory migrations on a local backup copy (`scripts/verify-factory-migration.ts`).
 
-Quality slots are enforced via `.github/workflows/quality-slots.yml` (`quality / Z1: Gate`, System1 v1.3.0 / `nocoo/base-ci v2026.15`). Statuses: `enforced`, `planned`, `manual`, `N/A`.
+## Quality & Local Gates
 
-| Dimension             | Required proof                                                                                                                        | Status   | Current enforcement / gap                                                                                                                                                                                                                                                                                                                                          |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| L1 pre-commit quality | Statements, branches, functions and lines each ≥95%; no skipped/focused tests; strict types and check-only lint, zero errors/warnings | planned  | Pre-commit exports the Git index to a temp snapshot and runs typecheck, lint, four structural gates and `test:coverage` there (not the working tree). Same subchecks as CI: skip gate, Biome, L1 network guard, three TS configs, Wrangler types and fetch boundaries. Local measured wall time is still above the <30s target; duration optimization remains open |
-| L2 API                | Real local HTTP over 100% of endpoint/method combinations, success/failure and auth                                                   | planned  | Push/CI run functional suite A and JWT suite B; full endpoint/method assertion inventory must track the evolving factory API                                                                                                                                                                                                                                       |
-| L3 UI                 | Critical account/catalogue/repository/factory journeys in Chromium                                                                    | enforced | CI runs the built SPA through `scripts/run-e2e-bdd.ts` and GitHub stub                                                                                                                                                                                                                                                                                             |
-| G2 security           | Dependency and secret scans; missing tool fails                                                                                       | enforced | Pre-push passes stdin commit ranges, including new refs, to Gitleaks and scans `bun.lock` with OSV; CI shared scanners                                                                                                                                                                                                                                             |
-| D1 isolation          | Fresh local state per run, guards and marker before fixtures/reset/cleanup                                                            | planned  | Both runners are local with `_test_marker env=test` and stub ports, but reuse fixed directories and delete them before proving marker/ownership                                                                                                                                                                                                                    |
-| Build                 | Actual Vite assets in `dist/client`                                                                                                   | enforced | L3 runner and CD build; typecheck alone does not build                                                                                                                                                                                                                                                                                                             |
-| Docs / migration      | API/schema/source-window and rollback proof                                                                                           | manual   | Server, client and factory runbooks; local migration verifier on a backup copy                                                                                                                                                                                                                                                                                     |
+Follows `system1-quality`; CI slots and pinned `base-ci` live in `.github/workflows/quality-slots.yml` (via `.github/workflows/ci.yml`; `quality / Z1: Gate` required on `main`). Statuses: `enforced`, `planned`, `manual`, `N/A`.
 
-| Hook       | Current behavior                                                                                       | Required follow-up                                                               |
-| ---------- | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
-| pre-commit | Index snapshot via `git checkout-index`, then typecheck, full lint, four structural gates and coverage | Wall time still above <30s on this repo; index-vs-worktree rejection is enforced |
-| pre-push   | Local L2 and G2 in parallel; Gitleaks consumes stdin ranges                                            | Test the same pushed commit snapshots as well, <3min                             |
+- **L1 coverage**: >= 95% statements/branches/functions/lines on `apps/web/src/**/*.{ts,tsx}` (excludes tests and thin route/layout/entry shells in `vitest.config.ts`).
+- **N/A slots**: `L2 Runtime` (`N/A`, covered by `L3 Integration`); `P1 Package` (`N/A`, Worker app not published to npm).
+- **Planned gaps**: `pre-commit` wall time (>30s), `pre-push` exact pushed-commit snapshots, `L3` full factory endpoint inventory, and `L3`/`L4` per-run temp persist dirs (`planned`).
+- **Manual**: Docs and backup-copy D1 migration verification (`scripts/verify-factory-migration.ts`).
+- **`pre-commit`** (`.husky/`, check-only): runs `typecheck`, `lint`, 4 `gate:*` scripts, and `test:coverage` on a `git checkout-index` snapshot (staged `package.json`/`bun.lock` must match worktree).
+- **`pre-push`** (`.husky/`, check-only): runs `test:e2e:api` (`L3`) and `gate:security` (`G1` Gitleaks on stdin commit ranges + `G2` OSV on `bun.lock`) in parallel; missing scanners fail.
 
-Install restores Husky. Hooks are check-only; never use `--no-verify` on commits or branch pushes. CI/CD pins shared `nocoo/base-ci` workflows at `1ea10ecab22b72512399485391603fe03a161016` (`v2026.12`).
+## Resources & Isolation
 
-## Resources and isolation
+| Lane      | Endpoints / State                                                     | Boundary                                                              |
+| --------- | --------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Daily dev | Vite `7045`, Worker `37045` (`dev:server`: `7045`); `.wrangler/state` | Caddy `giraffe.dev.hexly.ai`; local D1, real GitHub unless overridden |
+| L3 API    | Worker `17045`, GitHub `17046`, JWKS `17047`; `.wrangler/e2e`         | Functional A + signed-JWT B start separate Workers; runner env only   |
+| L4 E2E    | Worker `27045`, GitHub `27046`; `.wrangler/e2e-pw`                    | Built SPA (`dist/client`) with dev-auth fixtures                      |
+| Prod      | `giraffe.hexly.ai`, Worker `giraffe`, D1 `giraffe-db` (`DB`)          | Env `production`; read-only unless authorized; probe `GET /api/live`  |
 
-| Lane      | Ports / directory                                                 | Boundary                                                                        |
-| --------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| Daily dev | Vite 7045, Worker 37045; `.wrangler/state`                        | Caddy `giraffe.dev.hexly.ai`; local D1, real GitHub unless configured otherwise |
-| L2        | Worker 17045, GitHub stub 17046, JWKS stub 17047; `.wrangler/e2e` | Functional and signed-JWT suites start separate Workers; runner env files only  |
-| L3        | Worker 27045, GitHub stub 27046; `.wrangler/e2e-pw`               | Real built SPA with development-auth fixtures                                   |
-
-Keep these ports free; a conflict fails instead of falling back to development. Required runners allocate per-run local persistence, reject remote bindings/credential fallback, prove test context and verify `_test_marker(key,value)` with `env=test` before reset/cleanup. Existing fixed directory names are implementation gaps, not the desired contract.
-
-## Operations / release
-
-### CI checks
-
-`.github/workflows/ci.yml` (workflow `CI`) runs on pull requests and pushes to `main` through the shared `quality.yml`. A PR is green only when every required check passes:
-
-| Check                                      | Runs                                                                            |
-| ------------------------------------------ | ------------------------------------------------------------------------------- |
-| `quality / S1: Typecheck`                  | `bun run typecheck`                                                             |
-| `quality / S2: Lint`                       | `bun run lint`                                                                  |
-| `quality / S3: Workflow Lint`              | actionlint, SHA pin, `deploy-worker.yml` reference                              |
-| `quality / G1: Secret Scan`                | Gitleaks (`.gitleaks.toml`)                                                     |
-| `quality / G2: Dependency Vulnerabilities` | OSV Scanner (`bun.lock`)                                                        |
-| `quality / B1: Build`                      | `bun run build`                                                                 |
-| `quality / L1: Unit Tests & Coverage`      | four `gate:*` scripts then `bun run test:coverage`                              |
-| `quality / L2: API E2E`                    | `bun run test:e2e:api`                                                          |
-| `quality / L3: Browser E2E`                | `bun run test:e2e:bdd` (Chromium)                                               |
-| `quality / Z1: Gate`                       | slot-status strict aggregate (branch protection should require this check only) |
-
-`L1.5: Worker Runtime Tests` and `P1: Package Check` are declared `na` in `slot-status` and do not run.
-
-### Release command and deploy target
-
-- Deploy target: Cloudflare Worker `giraffe` on custom domain `giraffe.hexly.ai` (`wrangler.toml`), D1 `giraffe-db` (`DB`), GitHub environment `production`.
-- Every green `CI` run on `main` triggers `.github/workflows/release.yml`, which builds, applies D1 migrations and deploys automatically. Merging a PR is a deploy.
-- Versioned release (tag must equal root `package.json` version): `git tag vX.Y.Z <main-sha> && git push origin vX.Y.Z`, then `gh release create vX.Y.Z --generate-notes`.
-- Redeploy an existing tag: `gh workflow run release.yml -f tag=vX.Y.Z`.
-- Watch: `gh run list --workflow release.yml --limit 3`, then `gh run watch <id>`. The workflow verifies `/api/live` reports the expected version (6 retries, 5s apart).
-
-Authorized publication uses `.github/workflows/release.yml`: trusted successful main CI or an explicitly requested version tag/manual dispatch, shared migration/build/deploy workflow and production secrets. Do not deploy concurrently from a laptop. Apply additive migrations before code needing the new schema; validate factory migrations against a local backup copy as documented.
-Verify `GET https://giraffe.hexly.ai/api/live`: current top-level version and a real D1 `SELECT 1`; database failure returns uncached 503 with `status: "error"`. `_test_marker` is test metadata, not the production health probe, and private diagnostics never enter the response. Runbook: [server](docs/04-server.md).
+Keep fixed test ports free; conflicts fail instead of falling back to dev (coordinate across concurrent worktrees). Target runner contract: per-run temp persistence, reject remote bindings/credential fallback, prove test context, and verify `_test_marker(key,value)` (`env=test`) before reset/cleanup (fixed dirs remain an open gap).
 
 ## Retrospective
 
-Narratives remain in [Retrospective.md](Retrospective.md); keep only recurring rules here, cross-project lessons in global rules/nmem and deterministic requirements in hooks/tests.
-
-## Machine API boundary
-
-- Every `/api/v1/*` request requires a Worker-enforced hash-only, fixed-account, scoped, expiring bearer token; there are no tokenless machine endpoints. Access bypass is restricted to that path, never the dashboard host.
-- Browser token management remains Access protected and browser writes require same-origin. Tokens expire within 90 days and must be rotated before expiry. Raw tokens are returned only when minted and must not enter logs, URLs, browser persistence or D1.
-- Agent records/reports/jobs are mutable local application resources with revisions. GitHub observations and factory publications remain read-only. GET never collects upstream or records token activity.
-- `/analysis` and analysis-only browser projections are removed. Generic machine records/reports/jobs remain available, but there is no bundled analysis runtime, model inference/settings, automatic code-change engine or endpoint that executes local code. External producers use the machine API; never submit their model secrets to Giraffe. Legacy AI tables and historical resource rows can remain untouched. Contract: [Machine API](docs/11-agent-api.md).
+Record incident narratives in [Retrospective.md](Retrospective.md); promote recurring project constraints to `Invariants` above, cross-project lessons to global rules, and deterministic safeguards to tests or hooks.
