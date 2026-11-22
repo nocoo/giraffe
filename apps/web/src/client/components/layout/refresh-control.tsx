@@ -68,8 +68,8 @@ function RefreshPanel({
 				<PopoverTitle id={title}>统一刷新</PopoverTitle>
 				<p className="text-xs text-basalt-muted-foreground">
 					{repo
-						? `先刷新账号信息，再仅刷新 ${repo}，不改变星标。`
-						: "先刷新账号信息与仓库清单，再串行刷新所有星标仓库（不限所有者），以及本账号上海当日新建且未观测的非 fork 仓库；不会自动加星。"}
+						? `仅刷新 ${repo}，不改变星标。`
+						: "刷新默认范围（星标及上海当日新仓库），不自动加星。"}
 				</p>
 				<div role="status" aria-live="polite" className="space-y-1 text-sm tabular-nums">
 					{state.loading || state.reading ? (
@@ -149,7 +149,7 @@ function RefreshPanel({
 									/>
 								</label>
 								<p className="text-xs text-basalt-muted-foreground">
-									最多 31 个已结束的自然日；不含今天和未来。更改时区会重置日期为该时区昨日。
+									仅刷新已结束的自然日，最多 31 天。
 								</p>
 								<fieldset aria-label="刷新维度" className="grid grid-cols-2 gap-2">
 									{REFRESH_DIMENSIONS.map((dimension) => (
@@ -190,12 +190,7 @@ function RefreshPanel({
 						</Button>
 					</fieldset>
 				</form>
-				<p className="text-xs text-basalt-muted-foreground">
-					依赖分析不采集，缺失保持 —；依赖告警可刷新。
-				</p>
-				<p className="text-xs text-basalt-muted-foreground">
-					每日 03:00 Asia/Shanghai 自动刷新星标仓库；GitHub管家 04:30 读取摘要（外部服务）。
-				</p>
+				<p className="text-xs text-basalt-muted-foreground">每日 03:00 Asia/Shanghai 自动刷新。</p>
 			</PopoverContent>
 		</Popover>
 	);

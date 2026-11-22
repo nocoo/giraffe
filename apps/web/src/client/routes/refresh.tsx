@@ -116,12 +116,7 @@ function PlanForm({
 			}}
 		>
 			<div className="refresh-plan-scope">
-				<p>
-					一个任务先刷新 <strong>A · 账号信息、贡献趋势与仓库清单</strong>，再串行刷新{" "}
-					<strong>B · 仓库</strong>。留空时范围为所有星标仓库，加上本账号上海当日新建且未观测的非
-					fork 仓库；不会自动加星。
-				</p>
-				<CandyBadge tone="blue">无快速 / 深度模式</CandyBadge>
+				<p>留空刷新默认范围（星标及上海当日新仓库），不自动加星。</p>
 			</div>
 			<div className="refresh-plan-grid">
 				<label className="refresh-plan-field" data-wide="true" htmlFor="refresh-repo">
@@ -199,9 +194,7 @@ function PlanForm({
 					))}
 				</fieldset>
 			</div>
-			<p className="refresh-request-note">
-				只刷新已结束的自然日，最多 31 天；不含今天和未来。依赖分析不采集，缺失保持 —。
-			</p>
+			<p className="refresh-request-note">仅刷新已结束的自然日，最多 31 天。</p>
 			{invalid ? (
 				<p className="refresh-request-note" role="status">
 					{invalid}
@@ -214,7 +207,7 @@ function PlanForm({
 				<p className="refresh-request-note">当前采集不可用，已有快照仍可查看。</p>
 			) : null}
 			<div className="refresh-plan-footer">
-				<p>刷新任务离开页面后仍会执行；已有任务进行中时不会重复发起。</p>
+				<p>任务在后台执行，离开页面不影响。</p>
 				<div>
 					<Button type="submit" size="sm" disabled={disabled || Boolean(invalid)}>
 						<Play className="size-3.5" aria-hidden="true" />
@@ -270,10 +263,7 @@ function RefreshCenterBody({ center }: { center: RefreshCenterViewModel }) {
 						) : (
 							<div className="refresh-health-summary">
 								<strong>还没有刷新记录</strong>
-								<span>
-									默认覆盖星标仓库，以及本账号上海当日新建且未观测的非 fork
-									仓库；没有快照时显示缺失，不代表零。
-								</span>
+								<span>发起刷新后将在此展示进度与历史记录。</span>
 							</div>
 						)
 					}
@@ -346,8 +336,8 @@ function RefreshCenterBody({ center }: { center: RefreshCenterViewModel }) {
 								{state.loading && !state.runs.length
 									? "正在读取刷新记录…"
 									: state.selectedId
-										? "正在查看历史运行；未执行的步骤保持未执行"
-										: "进度表示已处理，不等于数据完整"}
+										? "正在查看历史运行"
+										: ""}
 							</span>
 							<div>
 								{state.selectedId ? (
@@ -377,7 +367,7 @@ function RefreshCenterBody({ center }: { center: RefreshCenterViewModel }) {
 							<EmptyState
 								icon={<FolderSync aria-hidden="true" />}
 								title="还没有刷新记录"
-								description="发起第一次统一刷新后，会在这里保留 A / B 进度与结果。"
+								description="发起首次刷新后将在此保留进度与历史记录。"
 								action={
 									<Button size="sm" onClick={() => setTab("plan")}>
 										发起第一次刷新
@@ -389,9 +379,7 @@ function RefreshCenterBody({ center }: { center: RefreshCenterViewModel }) {
 							<LayerCard aria-label="刷新记录">
 								<LayerCard.Header>
 									<h3 className="text-base font-semibold">运行记录</h3>
-									<span className="text-xs text-basalt-muted-foreground">
-										最多显示最近 50 次；点击查看详情
-									</span>
+									<span className="text-xs text-basalt-muted-foreground">最近 50 次</span>
 								</LayerCard.Header>
 								<LayerCard.Body className="p-0">
 									<TableScroll label="刷新记录">
@@ -462,10 +450,7 @@ function RefreshCenterBody({ center }: { center: RefreshCenterViewModel }) {
 					</TabsContent>
 					<TabsContent value="schedule" className="space-y-basalt-layout">
 						<div className="refresh-plan-scope">
-							<p>
-								自动刷新由 Cloudflare Cron 在北京时间 03:00 发起，与手动刷新使用同一个 A → 串行 B
-								任务和同一份运行记录。
-							</p>
+							<p>每日北京时间 03:00 自动执行。</p>
 							<CandyBadge tone="green">
 								<CalendarClock aria-hidden="true" />
 								每日 03:00
@@ -474,20 +459,16 @@ function RefreshCenterBody({ center }: { center: RefreshCenterViewModel }) {
 						<div className="refresh-schedule">
 							<div>
 								<h4>每日 03:00 Asia/Shanghai</h4>
-								<p>同一账号同一天自动请求去重；已有任务进行时排队执行，不并行。</p>
+								<p>同账号当日自动去重；已有任务进行时排队执行。</p>
 							</div>
 							<div>
 								<h4>默认范围</h4>
-								<p>所有星标仓库，加上本账号上海当日新建且未观测的非 fork 仓库；不会自动加星。</p>
-							</div>
-							<div>
-								<h4>结果读取</h4>
-								<p>页面仅展示已保存的运行结果；读取历史记录不会重新采集 GitHub 数据。</p>
+								<p>星标仓库及上海当日未观测的新建非 fork 仓库，不自动加星。</p>
 							</div>
 						</div>
 						<p className="refresh-request-note">
 							<Info className="mr-1 inline size-3.5 align-[-2px]" aria-hidden="true" />
-							自动刷新不可在页面中修改时间或启用状态；需要完整读取时请使用上方“发起刷新”。
+							计划时间固定，临时补采请使用「发起刷新」。
 						</p>
 					</TabsContent>
 				</Tabs>

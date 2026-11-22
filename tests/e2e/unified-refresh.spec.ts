@@ -109,10 +109,8 @@ test("real unified refresh reloads data, respects stars and supports an unstarre
 		.click();
 	await expect(page.getByText("暂无已保存的快照", { exact: true })).toBeVisible();
 	let dialog = await openRefresh(page);
-	await expect(dialog).toContainText("不会自动加星");
+	await expect(dialog).toContainText("不自动加星");
 	await expect(dialog).toContainText("03:00 Asia/Shanghai");
-	await expect(dialog).toContainText("04:30");
-	await expect(dialog).toContainText("外部服务");
 	await expect(dialog.getByRole("combobox")).toHaveCount(0);
 	await expect(dialog.getByText(/快速刷新|深度刷新|完整刷新|每周/)).toHaveCount(0);
 	await commitsOnly(dialog);
@@ -176,7 +174,6 @@ test("real unified refresh reloads data, respects stars and supports an unstarre
 	).length;
 	dialog = await openRefresh(page, true);
 	await expect(dialog).toContainText(`仅刷新 ${repository}，不改变星标`);
-	await expect(dialog).toContainText("依赖分析不采集，缺失保持 —");
 	await commitsOnly(dialog);
 	await dialog.getByRole("checkbox", { name: "强制重采已缓存日期", exact: true }).check();
 	const adhoc = await startRefresh(page, dialog, [repository], true);
