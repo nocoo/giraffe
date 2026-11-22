@@ -157,7 +157,7 @@ export function ReposPage() {
 						</Button>
 					</TooltipTrigger>
 					<TooltipContent>
-						<p>Giraffe 星标：筛选已保存快照，不触发采集</p>
+						<p>Giraffe 星标</p>
 						{source ? <p>星标来源：{source}</p> : null}
 						{repo.star_updated_at ? (
 							<p>
@@ -296,10 +296,7 @@ export function ReposPage() {
 			/>
 			<ScopeEmpty count={snap.repos.length} />
 			{days.length ? (
-				<ChartBrick
-					title="提交产出与覆盖面"
-					description="柱：每日默认分支提交（左轴）；线：截至当日 7 天内有提交的仓库数（右轴），看产出集中在少数仓库还是全面推进。来自软件工厂的已发布窗口。"
-				>
+				<ChartBrick title="提交产出与覆盖面">
 					<DataTimeSource
 						entries={[{ label: "活动统计", freshness: factoryFreshness(factory?.repos ?? []) }]}
 					/>
@@ -320,7 +317,7 @@ export function ReposPage() {
 				</span>
 			</div>
 			<div className="giraffe-overview" style={{ "--cols": 4 } as CSSProperties}>
-				<OverviewCard title="仓库构成" hint="按普通仓库、Fork 与已归档分组，点击下方状态筛选。">
+				<OverviewCard title="仓库构成">
 					<ShareBar
 						label="仓库构成"
 						legend={false}
@@ -347,7 +344,7 @@ export function ReposPage() {
 						/>
 					</div>
 				</OverviewCard>
-				<OverviewCard title="最近推送" hint="距最近一次推送的天数，点击筛选。越靠右越久未动。">
+				<OverviewCard title="最近推送">
 					<AgeStrip
 						age={board.freshness}
 						active={picked.age}
@@ -355,10 +352,7 @@ export function ReposPage() {
 						label="仓库最近推送分布"
 					/>
 				</OverviewCard>
-				<OverviewCard
-					title="主语言"
-					hint="按 GitHub 主语言统计仓库数，颜色与全站语言色一致。点击筛选。"
-				>
+				<OverviewCard title="主语言">
 					<Breakdown
 						rows={board.languages.rows.map((r) => ({ ...r, color: categoryColor(r.name) }))}
 						max={board.languages.max}
@@ -367,7 +361,7 @@ export function ReposPage() {
 						onSelect={pick("language")}
 					/>
 				</OverviewCard>
-				<OverviewCard title="Stars 最多" hint="当前筛选下 Stars 最多的仓库。">
+				<OverviewCard title="Stars 最多">
 					<Breakdown
 						rows={board.stars.rows}
 						max={board.stars.max}

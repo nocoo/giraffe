@@ -468,10 +468,7 @@ export function RepoDetailPage() {
 						<div className="flex flex-col gap-4">
 							<div className="grid gap-basalt-layout xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
 								{days.length ? (
-									<ChartBrick
-										title={`${days.length} 天活动`}
-										description="来自软件工厂的该仓库数据：每日默认分支提交与合并 PR（左轴），截至当日 7 天 CI 成功率（右轴）。"
-									>
+									<ChartBrick title={`${days.length} 天活动`}>
 										<DataTimeSource
 											entries={[
 												{
@@ -500,10 +497,7 @@ export function RepoDetailPage() {
 									</ChartBrick>
 								) : null}
 								{activity?.releases.timeline.length ? (
-									<ChartBrick
-										title="版本节奏"
-										description="已发布版本按时间排列，空心点为预发布；点的疏密即发布节奏。"
-									>
+									<ChartBrick title="版本节奏" description="空心点为预发布。">
 										<DataTimeSource
 											entries={[
 												{
@@ -613,7 +607,7 @@ export function RepoDetailPage() {
 							{activity ? (
 								<ChartBrick
 									title="工作流结果"
-									description="最近 100 次运行按日期与结果堆叠。成功率只计成功与失败，取消与跳过单列。"
+									description="最近 100 次运行；成功率仅计成功与失败。"
 								>
 									<p className="giraffe-stat-inline mb-2">
 										<span>
@@ -716,10 +710,7 @@ export function RepoDetailPage() {
 					) : releases ? (
 						<div className="flex flex-col gap-4">
 							{activity?.releases.timeline.length ? (
-								<ChartBrick
-									title="版本节奏"
-									description="已发布版本按时间排列，空心点为预发布；点的疏密即发布节奏。"
-								>
+								<ChartBrick title="版本节奏" description="空心点为预发布。">
 									<p className="giraffe-stat-inline mb-1">
 										<span>
 											已发布 <strong>{formatCount(activity.releases.published)}</strong>

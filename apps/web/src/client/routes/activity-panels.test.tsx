@@ -55,9 +55,9 @@ describe("activity saved-publication content", () => {
 		expect(html).toContain("发布版本（不含独立标签）");
 		expect(html).toContain("2026-10-22");
 		expect(html).toContain("2026-10-23");
-		expect(html).toContain("GitHub reported contributions（请求区间）");
+		expect(html).toContain("GitHub 贡献统计");
 		expect(html).toContain("2026-10-21");
-		expect(html).toContain("GitHub 原生日历（github，未转换时区）");
+		expect(html).toContain("GitHub 原生日历（未转换时区）");
 		expect(html).toContain("当天未结束");
 		expect(html).toContain("未知");
 		expect(html).toContain("窗口内没有记录");
@@ -109,7 +109,7 @@ describe("activity saved-publication content", () => {
 		day.coverage = { status: "partial", truncated: false, reason: "composition incomplete" };
 		day.types.commits = null;
 		const html = render(snapshot);
-		expect(html).toContain("GitHub reported contributions（请求区间）");
+		expect(html).toContain("GitHub 贡献统计");
 		expect(html).toContain('tabular-nums">8</p>');
 		expect(html).not.toContain("≥ 8");
 		expect(html).toContain("贡献来源不完整或未知");

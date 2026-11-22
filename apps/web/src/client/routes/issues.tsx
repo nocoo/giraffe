@@ -161,10 +161,7 @@ export function IssuesPage() {
 			/>
 			<ScopeEmpty count={snap.freshness?.total ?? snap.issues.length} />
 			{days.length ? (
-				<ChartBrick
-					title="Issue 流量与存量"
-					description="柱：每日新开与关闭，左轴为事件数；线：open Issue 存量，右轴。数据来自软件工厂的已发布窗口，不是实时 GitHub 状态。"
-				>
+				<ChartBrick title="Issue 流量与存量" description="日终 open 存量由当前值按每日事件倒推。">
 					<DataTimeSource
 						entries={[{ label: "活动统计", freshness: factoryFreshness(factory?.repos ?? []) }]}
 					/>
@@ -193,10 +190,7 @@ export function IssuesPage() {
 				</span>
 			</div>
 			<div className="giraffe-overview">
-				<OverviewCard
-					title="积压年龄"
-					hint="按创建时间分组，点击任一列筛选下方列表。越靠右越久未关闭。"
-				>
+				<OverviewCard title="积压年龄">
 					<AgeStrip
 						age={board.age}
 						active={picked.age}
@@ -204,10 +198,7 @@ export function IssuesPage() {
 						label="Issue 年龄分布"
 					/>
 				</OverviewCard>
-				<OverviewCard
-					title="按仓库"
-					hint="当前筛选下 open Issue 最多的仓库，其余合并为「其他」。点击筛选。"
-				>
+				<OverviewCard title="按仓库">
 					<Breakdown
 						rows={board.repos.rows}
 						max={board.repos.max}
@@ -217,10 +208,7 @@ export function IssuesPage() {
 						format={shortRepo}
 					/>
 				</OverviewCard>
-				<OverviewCard
-					title="新增节奏与标签"
-					hint="柱为近 12 周每周新建、目前仍 open 的 Issue；下方为标签分布，点击筛选。"
-				>
+				<OverviewCard title="新增节奏与标签" hint="近 12 周新建且仍 open 的 Issue。">
 					<CountBars
 						data={board.weekly}
 						series={[{ key: "y", label: "新建且仍 open", color: "var(--color-basalt-chart-5)" }]}

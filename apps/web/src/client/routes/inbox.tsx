@@ -173,10 +173,7 @@ export function InboxPage() {
 			{snap.notifications.length ? (
 				<>
 					<div className="giraffe-overview">
-						<OverviewCard
-							title="近 30 天通知"
-							hint="按更新日期、按原因堆叠。柱越高说明当天需要处理的通知越多。"
-						>
+						<OverviewCard title="近 30 天通知">
 							<CountBars
 								data={board.daily.points}
 								series={board.daily.keys.map((k) => ({ key: k, label: k, color: reasonColor(k) }))}
@@ -186,10 +183,7 @@ export function InboxPage() {
 								className="h-56 w-full"
 							/>
 						</OverviewCard>
-						<OverviewCard
-							title="按原因"
-							hint="GitHub 通知原因：author 为你创建的线程，subscribed 为关注的仓库。点击筛选。"
-						>
+						<OverviewCard title="按原因" hint="author 为你创建的线程，subscribed 为关注仓库。">
 							<Breakdown
 								rows={board.reasons.rows.map((r) => ({ ...r, color: reasonColor(r.name) }))}
 								max={board.reasons.max}
@@ -198,7 +192,7 @@ export function InboxPage() {
 								onSelect={pick("reason")}
 							/>
 						</OverviewCard>
-						<OverviewCard title="按仓库" hint="通知最多的仓库，点击筛选；其余合并为「其他」。">
+						<OverviewCard title="按仓库">
 							<Breakdown
 								rows={board.repos.rows}
 								max={board.repos.max}
@@ -247,7 +241,6 @@ export function InboxPage() {
 							<EmptyState
 								icon={<Inbox />}
 								title={snap.notifications.length ? "没有符合筛选的通知" : "收件箱为空"}
-								description="仅显示已保存的通知。"
 								action={
 									snap.notifications.length ? (
 										<Button

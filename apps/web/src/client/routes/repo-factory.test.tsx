@@ -212,7 +212,7 @@ it("asks for a state filter and keeps an incomplete stream explicit", async () =
 	try {
 		expect(container.textContent).toContain("分页上限");
 		expect(container.textContent).toContain("已截断");
-		expect(container.textContent).toContain("尚无可读记录；不代表 GitHub 中为零。");
+		expect(container.textContent).toContain("采集覆盖不完整。");
 	} finally {
 		await act(async () => root.unmount());
 	}
