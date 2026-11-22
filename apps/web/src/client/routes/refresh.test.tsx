@@ -133,7 +133,7 @@ it("restores the refresh console with current A/B progress, requests and cancell
 	expect(text).toContain("刷新中心");
 	expect(text).not.toContain("返回软件工厂");
 	expect(container.querySelector("header fieldset")).toBeNull();
-	expect(text).toContain("刷新中 · 手动 · 星标仓库 + 上海当日新建且未观测的非 fork 仓库");
+	expect(text).toContain("刷新中 · 手动 · 默认范围");
 	expect(text).toContain("B · nocoo/web · 2 / 2");
 	expect(text).toContain("A · 账号信息、贡献与仓库清单");
 	expect(text).toContain("GitHub 请求 · A / B 拆分");
@@ -195,12 +195,11 @@ it("starts a unified refresh from the plan tab and never exposes legacy modes", 
 	const value = model(null);
 	await render(value);
 	await tab("发起刷新");
-	expect(container.textContent).toContain("无快速 / 深度模式");
 	const repo = container.querySelector<HTMLInputElement>('[aria-label="指定仓库 owner/name"]');
 	expect(repo?.value).toBe("");
 	await act(async () => button("开始刷新").click());
 	expect(value.start).toHaveBeenCalledWith(defaultRefreshParams(new Date("2026-10-29T04:10:00Z")));
-	expect(container.textContent).not.toContain("快速刷新");
+	expect(container.textContent).not.toMatch(/快速刷新|深度刷新/);
 });
 
 it("blocks an invalid dimension selection without posting", async () => {
@@ -253,7 +252,7 @@ it("shows the fixed daily schedule instead of editable legacy plans", async () =
 	await render(model(null));
 	await tab("自动刷新");
 	expect(container.textContent).toContain("每日 03:00 Asia/Shanghai");
-	expect(container.textContent).toContain("页面仅展示已保存的运行结果");
+	expect(container.textContent).toContain("默认范围");
 	expect(container.textContent).not.toContain("04:30");
 	expect(container.textContent).not.toContain("每周");
 	expect(container.textContent).not.toContain("保存计划");

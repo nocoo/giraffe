@@ -413,9 +413,6 @@ export function RepoFactoryTab({
 					/>
 				) : null}
 			</div>
-			<p className="text-xs text-basalt-muted-foreground">
-				来自软件工厂的窗口内记录，含全部状态与采集覆盖；不是 GitHub 的实时视图。
-			</p>
 			{loading || error ? null : (
 				<div className="factory-provenance">
 					{coverage ? (
@@ -450,11 +447,7 @@ export function RepoFactoryTab({
 						<EmptyState
 							icon={<SearchX />}
 							title="没有符合筛选的记录"
-							description={
-								coverage?.status === "complete"
-									? "该端点范围内没有记录。"
-									: "尚无可读记录；不代表 GitHub 中为零。"
-							}
+							{...(coverage?.status === "complete" ? {} : { description: "采集覆盖不完整。" })}
 							action={
 								<Button
 									size="sm"

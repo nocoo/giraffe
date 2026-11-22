@@ -195,9 +195,7 @@ function RepoRow({ row }: { row: RefreshRepoRow }) {
 				) : null}
 				{timingText(row.timing) ? (
 					<p className="refresh-step-time">{timingText(row.timing)}</p>
-				) : (
-					<p className="refresh-step-time">这次运行没有保存该仓库的逐步时间。</p>
-				)}
+				) : null}
 			</div>
 		</details>
 	);
@@ -429,10 +427,7 @@ export function RefreshRunDetails({
 							))}
 						</TableBody>
 					</Table>
-					<p className="refresh-request-note">
-						{requestNote ??
-							`实际发出的 GitHub 请求；A 与 B 的拆分合计等于本次 ${formatCount(run.requests)} 次。`}
-					</p>
+					{requestNote ? <p className="refresh-request-note">{requestNote}</p> : null}
 				</LayerCard.Body>
 			</LayerCard>
 			<LayerCard className="refresh-run-issues" aria-label="部分数据原因">
@@ -443,7 +438,6 @@ export function RefreshRunDetails({
 					{groups.length ? (
 						<>
 							<div className="refresh-section-heading">
-								<p>缺失的数据保持缺失，不记为 0；相同原因已合并。</p>
 								<span>
 									{problems.length ? `${problems.length} 个范围需要关注` : "仅运行级原因"}
 								</span>
@@ -470,7 +464,7 @@ export function RefreshRunDetails({
 					) : (
 						<p className="refresh-console-note">
 							<Info aria-hidden="true" />
-							这次运行没有记录部分数据原因。缺失日期仍表示未观测，不代表零。
+							无异常原因。
 						</p>
 					)}
 				</LayerCard.Body>
@@ -479,9 +473,6 @@ export function RefreshRunDetails({
 				<LayerCard>
 					<LayerCard.Header>
 						<h3 className="text-base font-semibold">仓库进度 · A 之后的串行 B</h3>
-						<span className="text-xs text-basalt-muted-foreground">
-							展开仓库，查看维度处理状态与原因
-						</span>
 					</LayerCard.Header>
 					<LayerCard.Body className="p-0">
 						{rows.length ? (

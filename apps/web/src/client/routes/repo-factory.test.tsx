@@ -113,9 +113,7 @@ it("keeps skipped dependency resources missing instead of showing zero observati
 	vi.mocked(loadFactoryDetail).mockRejectedValue(new ApiError(409, "snapshot_missing", "missing"));
 	const { container, root } = await render("dependencies");
 	try {
-		expect(container.querySelector('[role="alert"]')?.textContent).toBe(
-			"暂无已保存的资源快照；缺失不代表没有记录。",
-		);
+		expect(container.querySelector('[role="alert"]')?.textContent).toBe("暂无已保存的快照。");
 		expect(container.querySelector(".factory-provenance")).toBeNull();
 		expect(container.textContent).not.toContain("0 条观察记录");
 	} finally {
@@ -214,7 +212,7 @@ it("asks for a state filter and keeps an incomplete stream explicit", async () =
 	try {
 		expect(container.textContent).toContain("分页上限");
 		expect(container.textContent).toContain("已截断");
-		expect(container.textContent).toContain("尚无可读记录；不代表 GitHub 中为零。");
+		expect(container.textContent).toContain("采集覆盖不完整。");
 	} finally {
 		await act(async () => root.unmount());
 	}

@@ -274,10 +274,7 @@ export function InsightsPage() {
 			/>
 			<ScopeEmpty count={board.insights.insights.length} />
 			{days.length ? (
-				<ChartBrick
-					title="待办存量"
-					description="每日日终的 open Issue 与 open PR 存量，由当前数量按每日新开与完成倒推；两条线同一单位，用于看积压走向。来自软件工厂的已发布窗口。"
-				>
+				<ChartBrick title="待办存量" description="日终 open 存量由当前值按每日事件倒推。">
 					<DataTimeSource
 						entries={[{ label: "活动统计", freshness: factoryFreshness(factory?.repos ?? []) }]}
 					/>
@@ -322,10 +319,7 @@ export function InsightsPage() {
 						</span>
 					</p>
 					<ChartRow>
-						<ChartBrick
-							title="仓内 Issue / PR"
-							description="当前 open Issue 与 PR 最多的 8 个仓库；其余仓库合计见下方说明。"
-						>
+						<ChartBrick title="仓内 Issue / PR">
 							{charts.workloadByRepo.length > 0 ? (
 								<>
 									<StackedBarChart
@@ -348,7 +342,7 @@ export function InsightsPage() {
 								<ChartEmpty label="没有打开的 Issue 或 Pull Request" />
 							)}
 						</ChartBrick>
-						<ChartBrick title="仓库覆盖" description="哪些仓库有待处理的 Issue 或 Pull Request">
+						<ChartBrick title="仓库覆盖">
 							{charts.coverage.length > 0 ? (
 								<DonutChart
 									data={charts.coverage}
@@ -382,10 +376,7 @@ export function InsightsPage() {
 						</span>
 					</p>
 					<ChartRow>
-						<ChartBrick
-							title="近 8 周新建"
-							description="当前打开的 Issue 与 Pull Request 的创建时间"
-						>
+						<ChartBrick title="近 8 周新建">
 							<BarChart
 								data={charts.activity}
 								series={ISSUE_PR_SERIES}
@@ -396,7 +387,7 @@ export function InsightsPage() {
 								valueFormatter={formatCount}
 							/>
 						</ChartBrick>
-						<ChartBrick title="PR 状态" description="草稿、待审查、需修改、已批准与未标记">
+						<ChartBrick title="PR 状态">
 							{charts.prStatus.length > 0 ? (
 								<DonutChart
 									data={charts.prStatus}
@@ -446,14 +437,11 @@ export function InsightsPage() {
 							90 天以上未推送 <strong>{formatCount(charts.staleCount)}</strong>
 						</span>
 					</p>
-					<ChartBrick
-						title="仓库健康地图"
-						description="每个方块是当前范围内的一个自有仓库，风险在前。颜色表示健康状态，方块内是距最近推送天数；悬停查看触发的规则，点击打开仓库。"
-					>
+					<ChartBrick title="仓库健康地图" description="按风险优先排列，方块内为距最近推送天数。">
 						<HealthMap tiles={tiles} />
 					</ChartBrick>
 					<ChartRow>
-						<ChartBrick title="距上次推送" description="以数据更新时间为基准，单位为天">
+						<ChartBrick title="距上次推送" description="以数据更新时间为基准（天）。">
 							<BarChart
 								data={charts.freshness}
 								series={[{ key: "y", label: "仓库数", color: chartColor(0) }]}
@@ -464,7 +452,7 @@ export function InsightsPage() {
 								valueFormatter={formatCount}
 							/>
 						</ChartBrick>
-						<ChartBrick title="健康分布" description="当前可见仓库的健康状态">
+						<ChartBrick title="健康分布">
 							{charts.health.length > 0 ? (
 								<DonutChart
 									data={charts.health}

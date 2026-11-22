@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.29.4 - 2026-11-23
+
+### Changed
+
+- Made `FactoryPanel` and `OverviewCard` tooltips optional and trimmed redundant explanatory copy,
+  disclaimers, and duplicated empty states across Factory, Refresh Center, Insights, CI, Repos,
+  Issues, Pulls, Alerts, Inbox, Today, and Settings.
+- Replaced pure-black foreground strokes and dark overlays in light-mode charts (`FlowStockChart`,
+  `BacklogPanel`, and `ActivityQuadrant`) with Basalt chart palette and axis tokens.
+
 ## v0.29.3 - 2026-11-20
 
 ### Changed

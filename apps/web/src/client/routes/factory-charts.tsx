@@ -21,7 +21,7 @@ export function FactoryPanel({
 	flush = false,
 }: {
 	title: string;
-	hint: string;
+	hint?: string;
 	children: ReactNode;
 	className?: string;
 	flush?: boolean;
@@ -33,7 +33,7 @@ export function FactoryPanel({
 					<Text as="h2" variant="heading">
 						<IconLabel icon={ChartNoAxesCombined}>{title}</IconLabel>
 					</Text>
-					<HelpTooltip label={`${title}说明`}>{hint}</HelpTooltip>
+					{hint ? <HelpTooltip label={`${title}说明`}>{hint}</HelpTooltip> : null}
 				</div>
 			</LayerCard.Header>
 			<LayerCard.Body className={`factory-panel-body ${flush ? "p-0" : ""}`}>
@@ -140,7 +140,7 @@ export function FactoryHeatmap({
 				})}
 			</div>
 			<div className="mt-3 flex flex-wrap justify-between gap-2 text-xs text-basalt-muted-foreground">
-				<span>{formatDate(days[0]?.date).slice(0, 10)} · 周一至周日，自上而下</span>
+				<span>{formatDate(days[0]?.date).slice(0, 10)}</span>
 				<span>
 					少{" "}
 					{[1, 2, 3, 4].map((level) => (
@@ -152,10 +152,7 @@ export function FactoryHeatmap({
 					))}{" "}
 					多
 				</span>
-				<span>
-					{formatDate(days.at(-1)?.date).slice(0, 10)}
-					{days.at(-1)?.observed === undefined ? "（最新日期）" : "（最新观测日）"}
-				</span>
+				<span>{formatDate(days.at(-1)?.date).slice(0, 10)}</span>
 			</div>
 		</div>
 	);

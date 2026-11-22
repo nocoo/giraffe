@@ -146,7 +146,7 @@ export function AlertsPage() {
 			{all.length ? (
 				<>
 					<div className="giraffe-overview">
-						<OverviewCard title="严重程度" hint="按 GitHub 给出的级别分组，点击筛选下方列表。">
+						<OverviewCard title="严重程度">
 							<ShareBar
 								label="告警严重程度"
 								legend={false}
@@ -172,7 +172,7 @@ export function AlertsPage() {
 								/>
 							</div>
 						</OverviewCard>
-						<OverviewCard title="按仓库" hint="告警最多的仓库，点击筛选。">
+						<OverviewCard title="按仓库">
 							<Breakdown
 								rows={board.repos.rows}
 								max={board.repos.max}
@@ -183,10 +183,7 @@ export function AlertsPage() {
 								color="hsl(var(--basalt-accent-8))"
 							/>
 						</OverviewCard>
-						<OverviewCard
-							title="按来源"
-							hint="Dependabot 依赖漏洞与 Code scanning 代码扫描，点击筛选。"
-						>
+						<OverviewCard title="按来源">
 							<Breakdown
 								rows={board.sources.rows}
 								max={board.sources.max}

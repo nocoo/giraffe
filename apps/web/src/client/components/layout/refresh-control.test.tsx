@@ -99,12 +99,10 @@ it("offers one account refresh with yesterday, star/new selection and external s
 	empty();
 	await render();
 	await act(async () => button("刷新数据").click());
-	expect(document.body.textContent).toContain("所有星标仓库（不限所有者）");
-	expect(document.body.textContent).toContain("本账号上海当日新建且未观测的非 fork 仓库");
+	expect(document.body.textContent).toContain("默认范围");
+	expect(document.body.textContent).toContain("不自动加星");
 	expect(document.body.textContent).not.toContain("新发现");
 	expect(document.body.textContent).toContain("03:00");
-	expect(document.body.textContent).toContain("04:30");
-	expect(document.body.textContent).toContain("依赖分析");
 	expect(document.body.textContent).not.toMatch(/快速刷新|深度刷新|每周|AI 分析/);
 	expect(document.querySelector<HTMLInputElement>('[aria-label="开始日期"]')?.value).toBe(
 		"2026-10-28",

@@ -89,8 +89,6 @@ it("keeps machine token settings and names the app-write refresh permission", as
 	expect(container.textContent).toContain("管理现有令牌");
 	expect(container.querySelector<HTMLInputElement>("#new-token-label")?.value).toBe("External Bot");
 	expect(container.textContent).not.toMatch(/本地 Agent|CLI|PKCE/);
-	expect(container.textContent).toContain("原文只显示一次");
-	expect(container.textContent).toContain("撤销立即生效");
 	expect(container.textContent).toContain("修改应用配置");
 	expect(container.textContent).toContain("发起刷新");
 	expect(container.textContent).not.toContain("令牌仅绑定所选账号");
@@ -98,6 +96,7 @@ it("keeps machine token settings and names the app-write refresh permission", as
 	expect(info).not.toBeNull();
 	await act(async () => info?.click());
 	expect(document.body.textContent).toContain("令牌仅绑定所选账号");
+	expect(document.body.textContent).toContain("撤销立即生效");
 	expect(button("创建令牌").disabled).toBe(true);
 	expect(listTokens).not.toHaveBeenCalled();
 });

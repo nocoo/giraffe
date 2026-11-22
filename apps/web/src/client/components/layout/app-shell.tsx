@@ -165,16 +165,13 @@ function AppShellInner() {
 						<ContentIsland>
 							{accessDenied ? (
 								<div className="space-y-8">
-									<PageHeader
-										title="未通过 Access"
-										description="此应用需要 Cloudflare Access 身份。"
-									/>
+									<PageHeader title="未通过 Access" />
 									<LayerCard>
 										<LayerCard.Body>
 											<EmptyState
 												icon={<ShieldAlert />}
-												title="未通过 Access"
-												description="此应用需要 Cloudflare Access 身份。"
+												title="需要 Cloudflare Access 身份"
+												description="请通过部署的 Cloudflare Access 验证后访问。"
 											/>
 										</LayerCard.Body>
 									</LayerCard>

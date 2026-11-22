@@ -128,10 +128,8 @@ describe("refresh center run summaries", () => {
 		expect(refreshScopeLabel(run({ params: { ...run().params, lookbackDays: 90 } }))).toBe(
 			"历史回填 · 仅星标仓库 · 90 天",
 		);
-		expect(refreshScopeLabel(run())).toBe("手动 · 星标仓库 + 上海当日新建且未观测的非 fork 仓库");
-		expect(refreshScopeLabel(run({ trigger: "scheduled" }))).toBe(
-			"每日自动 · 星标仓库 + 上海当日新建且未观测的非 fork 仓库",
-		);
+		expect(refreshScopeLabel(run())).toBe("手动 · 默认范围");
+		expect(refreshScopeLabel(run({ trigger: "scheduled" }))).toBe("每日自动 · 默认范围");
 		expect(refreshScopeLabel(run({ params: { ...run().params, repo: "nocoo/app" } }))).toBe(
 			"单仓库 · nocoo/app",
 		);
@@ -807,7 +805,7 @@ describe("refresh center repositories and reasons", () => {
 		expect(rows[0]).toMatchObject({
 			id: "run-2",
 			status: "部分完成",
-			scope: "手动 · 星标仓库 + 上海当日新建且未观测的非 fork 仓库",
+			scope: "手动 · 默认范围",
 			duration: "3 分 0 秒",
 			requests: "6",
 			problems: "nocoo/app",

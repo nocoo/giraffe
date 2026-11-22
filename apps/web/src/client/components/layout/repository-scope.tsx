@@ -43,7 +43,7 @@ export function ScopeEmpty({ count }: { count: number }) {
 			className="[--giraffe-empty-min-height:16rem]"
 			icon={<Star />}
 			title="当前星标范围暂无数据"
-			description="可查看全部仓库的已有数据，或在仓库页添加星标。切换范围不会触发采集。"
+			description="可查看全部仓库，或在仓库页添加星标。"
 			action={
 				<Button size="sm" variant="secondary" onClick={() => setRepositoryScope("all")}>
 					查看全部仓库

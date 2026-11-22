@@ -185,10 +185,7 @@ export function PullsPage() {
 			/>
 			<ScopeEmpty count={snap.freshness?.total ?? snap.pull_requests.length} />
 			{days.length ? (
-				<ChartBrick
-					title="PR 流量与存量"
-					description="柱：每日新开与合并（未合并关闭单列），左轴为事件数；线：open PR 存量，右轴。数据来自软件工厂的已发布窗口，不是实时 GitHub 状态。"
-				>
+				<ChartBrick title="PR 流量与存量" description="日终 open 存量由当前值按每日事件倒推。">
 					<DataTimeSource
 						entries={[{ label: "活动统计", freshness: factoryFreshness(factory?.repos ?? []) }]}
 					/>
@@ -237,10 +234,7 @@ export function PullsPage() {
 			{board.total ? (
 				<>
 					<div className="giraffe-overview" style={{ "--cols": history ? 4 : 3 } as CSSProperties}>
-						<OverviewCard
-							title="审查状态"
-							hint="草稿、待审查、需修改、已批准与未标记，点击图例下方的状态筛选。"
-						>
+						<OverviewCard title="审查状态">
 							<ShareBar
 								label="PR 审查状态"
 								legend={false}
@@ -266,10 +260,7 @@ export function PullsPage() {
 								/>
 							</div>
 						</OverviewCard>
-						<OverviewCard
-							title="年龄与规模"
-							hint="上方为创建至今的天数分布，点击筛选；下方为增删行数的规模分组。"
-						>
+						<OverviewCard title="年龄与规模">
 							<div className="flex flex-1 flex-col justify-between gap-4">
 								<AgeStrip
 									age={board.age}
@@ -289,7 +280,7 @@ export function PullsPage() {
 							</div>
 						</OverviewCard>
 						{history ? (
-							<OverviewCard title="合并最多的仓库" hint="近 30 天合并 PR 数，来自软件工厂数据。">
+							<OverviewCard title="合并最多的仓库" hint="近 30 天合并数。">
 								<Breakdown
 									rows={history.repos.rows}
 									max={history.repos.max}
@@ -299,7 +290,7 @@ export function PullsPage() {
 								/>
 							</OverviewCard>
 						) : null}
-						<OverviewCard title="按仓库与作者" hint="open PR 最多的仓库与作者，点击筛选。">
+						<OverviewCard title="按仓库与作者">
 							<div className="mb-3 flex justify-end">
 								<SegmentControl
 									legend="分组维度"

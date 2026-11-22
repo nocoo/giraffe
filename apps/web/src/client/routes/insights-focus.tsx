@@ -42,10 +42,7 @@ export function FocusSection({ ranked, findings }: { ranked: FocusRepo[]; findin
 	return (
 		<SectionRule
 			title={<IconLabel icon={Target}>最值得关注的仓库</IconLabel>}
-			hint="根据默认分支 CI、安全告警与待办事实排序；Agent 判断在分析台独立查看。"
-			actions={
-				<span className="text-xs text-basalt-muted-foreground">按 CI、安全告警与待办规则计算</span>
-			}
+			hint="按默认分支 CI、安全告警与待办规则排序。"
 		>
 			<div className="giraffe-focus" data-testid="insight-focus">
 				{ranked.length ? (

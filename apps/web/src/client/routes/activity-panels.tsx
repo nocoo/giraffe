@@ -392,7 +392,7 @@ export function ActivityContent({
 									</div>
 									<p className="mt-basalt-layout-sm flex items-center gap-1.5 text-xs text-basalt-muted-foreground">
 										<GitCommit className="size-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
-										GitHub reported contributions（请求区间）
+										GitHub 贡献统计
 									</p>
 									<p className="mt-basalt-space-md text-2xl font-semibold tabular-nums">
 										{activityCount(day.count)}
@@ -426,7 +426,7 @@ export function ActivityContent({
 									</p>
 									{day.nativeCalendar ? (
 										<div className="mt-basalt-layout-sm text-xs text-basalt-muted-foreground">
-											<p>GitHub 原生日历（github，未转换时区）</p>
+											<p>GitHub 原生日历（未转换时区）</p>
 											<p className="mt-basalt-space-xs tabular-nums">
 												{day.nativeCalendar.days
 													.map((native) => `${native.date}：${activityCount(native.count)}`)
@@ -458,7 +458,7 @@ export function ActivityReadError({ retry }: { retry: () => void }) {
 			<EmptyState
 				icon={<ScanSearch />}
 				title="暂时无法读取当次活动"
-				description="未获得完整活动窗口，请重试；读取不会发起采集。"
+				description="未获得完整活动窗口，请重试。"
 				action={
 					<Button variant="secondary" size="sm" onClick={retry}>
 						重试

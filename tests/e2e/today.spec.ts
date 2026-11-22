@@ -48,11 +48,9 @@ test("today empty window is saved evidence, not a collection request", async ({ 
 	).toHaveAttribute("aria-current", "page");
 	await expect(page.getByTestId("activity-contributions")).toContainText("2026-10-22");
 	await expect(page.getByTestId("activity-contributions")).toContainText("当天未结束");
+	await expect(page.getByTestId("activity-contributions")).toContainText("GitHub 贡献统计");
 	await expect(page.getByTestId("activity-contributions")).toContainText(
-		"GitHub reported contributions（请求区间）",
-	);
-	await expect(page.getByTestId("activity-contributions")).toContainText(
-		"GitHub 原生日历（github，未转换时区）",
+		"GitHub 原生日历（未转换时区）",
 	);
 	expect(requests.filter((request) => request.method !== "GET")).toEqual([]);
 	expect(requests.filter((request) => request.pathname === "/api/activity")).toEqual([

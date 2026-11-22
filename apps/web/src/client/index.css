@@ -182,7 +182,7 @@
 .factory-stock-track>span { height:100%; }
 [data-kind=issue] { --kind:var(--factory-issue); }
 [data-kind=pr] { --kind:var(--factory-pr); }
-[data-kind=aged] { --kind:color-mix(in srgb,var(--color-basalt-foreground) 70%,transparent); }
+[data-kind=aged] { --kind:hsl(var(--basalt-accent-8)); }
 .factory-stock-track>span { background:var(--kind); }
 /* Backlog ranking: stock per repository with aged share and 30-day completions. */
 .factory-backlog-head { display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:12px;margin-bottom:12px; }
@@ -195,7 +195,7 @@
 .factory-backlog-name { overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500; }
 .factory-backlog-bar { display:flex;gap:1px;height:10px; }
 .factory-backlog-bar>span { position:relative;flex-grow:0;flex-shrink:0;height:100%;background:var(--kind);border-radius:2px;overflow:hidden;transform-origin:left;animation:factory-grow .6s cubic-bezier(.16,1,.3,1) both; }
-.factory-backlog-bar i { position:absolute;inset:0 auto 0 0;background:color-mix(in srgb,var(--color-basalt-foreground) 55%,transparent); }
+.factory-backlog-bar i { position:absolute;inset:0 auto 0 0;background:color-mix(in srgb,hsl(var(--basalt-accent-8)) 72%,transparent); }
 .factory-backlog-total { text-align:right;font-weight:600;font-variant-numeric:tabular-nums; }
 .factory-backlog-done { text-align:right;font-size:var(--text-xs);color:var(--color-basalt-muted-foreground);white-space:nowrap; }
 .factory-backlog-legend { display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:10px;font-size:var(--text-xs);color:var(--color-basalt-muted-foreground); }

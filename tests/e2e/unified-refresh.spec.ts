@@ -109,10 +109,8 @@ test("real unified refresh reloads data, respects stars and supports an unstarre
 		.click();
 	await expect(page.getByText("暂无已保存的快照", { exact: true })).toBeVisible();
 	let dialog = await openRefresh(page);
-	await expect(dialog).toContainText("不会自动加星");
+	await expect(dialog).toContainText("不自动加星");
 	await expect(dialog).toContainText("03:00 Asia/Shanghai");
-	await expect(dialog).toContainText("04:30");
-	await expect(dialog).toContainText("外部服务");
 	await expect(dialog.getByRole("combobox")).toHaveCount(0);
 	await expect(dialog.getByText(/快速刷新|深度刷新|完整刷新|每周/)).toHaveCount(0);
 	await commitsOnly(dialog);
@@ -176,7 +174,6 @@ test("real unified refresh reloads data, respects stars and supports an unstarre
 	).length;
 	dialog = await openRefresh(page, true);
 	await expect(dialog).toContainText(`仅刷新 ${repository}，不改变星标`);
-	await expect(dialog).toContainText("依赖分析不采集，缺失保持 —");
 	await commitsOnly(dialog);
 	await dialog.getByRole("checkbox", { name: "强制重采已缓存日期", exact: true }).check();
 	const adhoc = await startRefresh(page, dialog, [repository], true);
@@ -223,7 +220,7 @@ test("real unified refresh reloads data, respects stars and supports an unstarre
 	const period = page.locator(".factory-period");
 	await period.getByRole("radio", { name: "1 天", exact: true }).click();
 	await expect(period.locator("dl > div").first().locator("strong")).toHaveText("2");
-	await page.getByText("每日账本 · 可访问的图表数据与趋势核对", { exact: true }).click();
+	await page.getByText("每日账本", { exact: true }).click();
 	const nextDay = new Date(Date.parse(yesterday) + 86_400_000).toISOString().slice(0, 10);
 	const calendarRow = page.locator("#factory-ledger tr").filter({
 		has: page.getByRole("rowheader", {

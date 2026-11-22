@@ -164,7 +164,7 @@ it("clears a selected contribution date when the same scope loses its calendar",
 			window.dispatchEvent(new Event("focus"));
 		});
 		expect(container.textContent).toContain("当前显示仓库提交");
-		expect(container.textContent).not.toContain("已高亮每日账本");
+		expect(container.textContent).not.toContain("3 账号贡献");
 		expect(container.querySelector(".factory-ledger-selected")).toBeNull();
 	} finally {
 		await act(async () => root.unmount());
@@ -206,7 +206,7 @@ it.each([0, 2])(
 			await act(async () =>
 				container.querySelector<HTMLButtonElement>("[data-calendar-days]")?.click(),
 			);
-			expect(container.textContent).toContain(`${commits ? "≥ 2" : "—"} 提交；已高亮每日账本`);
+			expect(container.textContent).toContain(`${commits ? "≥ 2" : "—"} 提交`);
 			expect(container.querySelector(".factory-ledger-selected")).not.toBeNull();
 		} finally {
 			await act(async () => root.unmount());
@@ -288,7 +288,6 @@ it("defaults the historical chart window to 90 days and keeps range options", as
 		if (!thirty) throw new Error("Missing 30-day chart range");
 		await act(async () => thirty.click());
 		expect(container.querySelector("#factory-change-title")?.textContent).toBe("变化 · 最近 30 天");
-		expect(container.textContent).toContain("Open 存量由当前值倒推");
 		const wider = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="radio"]')).find(
 			(radio) => radio.textContent === "180 天",
 		);
@@ -297,7 +296,7 @@ it("defaults the historical chart window to 90 days and keeps range options", as
 		expect(container.querySelector("#factory-change-title")?.textContent).toBe(
 			"变化 · 最近 180 天",
 		);
-		expect(container.textContent).toContain("已发布覆盖 90 天，更早日期为空白");
+		expect(container.textContent).not.toContain("已发布覆盖");
 		const [ninety] = Array.from(
 			container.querySelectorAll<HTMLButtonElement>('[role="radio"]'),
 		).filter((radio) => radio.textContent === "90 天");
@@ -329,7 +328,6 @@ it.each([30, 90])("keeps the default chart span over %i published days", async (
 		expect(container.querySelector("#factory-change-title")?.textContent).toBe("变化 · 最近 90 天");
 		expect(container.textContent).not.toContain("每日快速刷新");
 		expect(container.textContent).not.toContain("每周深度刷新");
-		expect(container.textContent).toContain("默认 7 天仅用于期间比较");
 		expect(container.textContent).not.toContain("来源、口径与不确定性");
 	} finally {
 		await act(async () => root.unmount());

@@ -90,10 +90,11 @@ for (const dayCount of [30, 90]) {
 		await expect(
 			page.getByRole("group", { name: "octocat/hello-world 每日提交", exact: true }),
 		).toBeVisible();
-		await page.locator("#factory-change-title").getByLabel("More information").hover();
-		await expect(page.getByRole("tooltip")).not.toContainText("快速刷新");
-		await expect(page.getByRole("tooltip")).not.toContainText("深度刷新");
-		await expect(page.getByRole("tooltip")).toContainText("默认 7 天仅用于期间比较");
+		await expect(page.locator("#factory-change-title").getByLabel("More information")).toHaveCount(
+			0,
+		);
+		await expect(page.locator("body")).not.toContainText("快速刷新");
+		await expect(page.locator("body")).not.toContainText("深度刷新");
 		await expect(page.locator("details").filter({ hasText: "来源、口径与不确定性" })).toHaveCount(
 			0,
 		);

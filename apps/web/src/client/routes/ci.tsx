@@ -141,7 +141,7 @@ export function CiPage() {
 			<ScopeEmpty count={report.repos.length + report.unsaved.length} />
 			<ChartBrick
 				title="运行结果与成功率"
-				description="柱：每日完成运行按结果堆叠（左轴，单位是运行次数）；线：截至当日 7 天成功率（右轴），只计成功与失败，取消与跳过单列。不含 Dependabot 更新任务。"
+				description="成功率仅计成功与失败，不含 Dependabot 更新任务。"
 			>
 				<CiTrend daily={report.daily} />
 			</ChartBrick>
@@ -261,7 +261,7 @@ export function CiPage() {
 				title={
 					<IconLabel
 						icon={Workflow}
-						hint="每行一条工作流分支线，分支观察不计入健康汇总。方块为最近 10 次运行，从左到右由旧到新，最右侧加框的一格是最新一次；不足 10 次时，左侧以极淡灰色补位，不代表运行状态。"
+						hint="分支观察不计入健康汇总；右侧加框格为最新一次，淡灰为补位。"
 						hintLabel="工作流与分支观察说明"
 					>
 						工作流与分支观察
@@ -582,9 +582,6 @@ function WatchList({
 }) {
 	return (
 		<div className="giraffe-watch" data-muted={muted || undefined}>
-			<div className="flex justify-end">
-				<span className="giraffe-watch-order">方块 旧 → 新</span>
-			</div>
 			{items.length ? (
 				<ul>
 					{items.slice(0, 12).map((s) => (
