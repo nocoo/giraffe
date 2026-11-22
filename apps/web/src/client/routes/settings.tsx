@@ -171,9 +171,6 @@ export function SettingsPage() {
 										{accountAddLabel(phase)}
 									</Button>
 								</div>
-								<p className="text-xs leading-5 text-basalt-muted-foreground">
-									添加账号后可查看已有快照，或从顶部发起统一刷新。
-								</p>
 							</form>
 						</LayerCard.Body>
 					</LayerCard>
@@ -199,10 +196,7 @@ export function SettingsPage() {
 							) : (
 								<IdentitySkeleton />
 							)}
-							<div className="space-y-2 text-sm leading-6 text-basalt-muted-foreground">
-								<p>访问身份由 Cloudflare Access 验证。</p>
-								<p>每次使用一个活跃的 GitHub 账号。切换账号后，页面会显示该账号的数据。</p>
-							</div>
+							<p className="text-sm text-basalt-muted-foreground">由 Cloudflare Access 验证。</p>
 						</LayerCard.Body>
 					</LayerCard>
 				</div>

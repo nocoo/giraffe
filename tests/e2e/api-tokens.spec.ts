@@ -90,7 +90,7 @@ for (const width of [1440, 390])
 			"/authorize?redirect_uri=https://evil.test/callback",
 		]) {
 			await page.goto(path);
-			await expect(page.getByText("没有这个页面。", { exact: true })).toBeVisible();
+			await expect(page.getByText("页面不存在", { exact: true })).toBeVisible();
 			expect(new URL(page.url()).pathname).toBe("/authorize");
 			await expect(page.getByRole("button", { name: "同意并返回 CLI" })).toHaveCount(0);
 			await expect(page.locator('a[href="/authorize"]')).toHaveCount(0);

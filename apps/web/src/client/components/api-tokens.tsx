@@ -73,7 +73,7 @@ export function ApiTokens({ accounts }: { accounts: PublicAccount[] }) {
 			title={
 				<IconLabel
 					icon={KeyRound}
-					hint="令牌仅绑定所选账号。原文只在创建时显示一次，撤销立即生效。过期或撤销后无法继续调用。不要提交模型密钥或 GitHub PAT。"
+					hint="令牌仅绑定所选账号；仅支持缩小权限，新增权限请创建新令牌。原文仅创建时显示一次，撤销立即生效。"
 					hintLabel="外部 Bot API 令牌说明"
 				>
 					外部 Bot API 令牌
@@ -153,16 +153,13 @@ export function ApiTokens({ accounts }: { accounts: PublicAccount[] }) {
 									))}
 								</div>
 							</Checkbox.Group>
-							<div className="flex flex-wrap items-center gap-basalt-space-lg">
+							<div>
 								<Button
 									type="submit"
 									disabled={busy || !selected || !scopes.length || !label.trim()}
 								>
 									创建令牌
 								</Button>
-								<p className="text-basalt-xs text-basalt-muted-foreground">
-									原文只显示一次，请立即保存；撤销立即生效。
-								</p>
 							</div>
 						</form>
 						{secret ? (
@@ -326,9 +323,6 @@ function TokenRow({
 				</IconLabel>
 				<IconLabel icon={Clock3} iconClassName="size-3.5">
 					最近写入 {formatPreciseDate(row.last_used_at)}
-				</IconLabel>
-				<IconLabel icon={ShieldCheck} iconClassName="size-3.5">
-					只能缩小权限，新增权限请创建新令牌
 				</IconLabel>
 			</div>
 		</li>
