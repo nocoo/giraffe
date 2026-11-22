@@ -185,8 +185,8 @@ export function FactoryPage() {
 				title={calendar === "commits" ? "提交日历" : "账号贡献日历"}
 				hint={
 					calendar === "commits"
-						? "按提交时间统计当前筛选的仓库，悬停查看本地时间区间。各仓库更新时间不同时，显示它们的日期并集，最多一年；斜纹表示未完整获取，不是零提交。"
-						: "展示账号过去一年的 GitHub 贡献日期（UTC），不受仓库筛选影响；仓库提交仍按独立观测窗口展示。"
+						? "斜纹表示未完整获取，不是零提交。"
+						: "账号过去一年的 GitHub 贡献（UTC），不受仓库筛选影响。"
 				}
 			>
 				<div className="mb-3 flex items-center justify-between gap-2">
@@ -257,8 +257,8 @@ export function FactoryPage() {
 					<p className="mt-3 text-xs" role="status">
 						{formatDayRange(day, day, calendarTimezone ?? board.timezone)} ·{" "}
 						{calendar === "commits"
-							? `${selectedCommitCount} 提交；已高亮每日账本；明细日期筛选独立。`
-							: `${snapshot.contribution?.days.find((d) => d.date === day)?.count ?? 0} 账号贡献。`}
+							? `${selectedCommitCount} 提交`
+							: `${snapshot.contribution?.days.find((d) => d.date === day)?.count ?? 0} 账号贡献`}
 						<a
 							className="factory-link ml-2"
 							href={
@@ -383,36 +383,22 @@ export function FactoryPage() {
 												<IconLabel icon={Activity}>变化 · 最近 {board.days.length} 天</IconLabel>
 											}
 											actions={
-												<div className="flex flex-wrap items-center justify-end gap-2">
-													<SegmentControl
-														className={INLINE_SEGMENT}
-														legend="图表窗口"
-														value={String(range)}
-														options={FACTORY_RANGES.map((days) => ({
-															value: String(days),
-															label: `${days} 天`,
-														}))}
-														onValueChange={(value) =>
-															update("range", value === String(DEFAULT_FACTORY_RANGE) ? "" : value)
-														}
-													/>
-													{board.days.length < range || range > board.availableDays ? (
-														<span role="status" className="text-xs text-basalt-muted-foreground">
-															已发布覆盖 {board.availableDays} 天
-															{board.days.length < range
-																? "，默认窗口止于可用历史"
-																: "，更早日期为空白"}
-														</span>
-													) : null}
-												</div>
+												<SegmentControl
+													className={INLINE_SEGMENT}
+													legend="图表窗口"
+													value={String(range)}
+													options={FACTORY_RANGES.map((days) => ({
+														value: String(days),
+														label: `${days} 天`,
+													}))}
+													onValueChange={(value) =>
+														update("range", value === String(DEFAULT_FACTORY_RANGE) ? "" : value)
+													}
+												/>
 											}
-											hint={`左轴为每日事件数（柱），右轴为结果指标（折线）；Open 存量由当前值倒推。默认 7 天仅用于期间比较，不改变图表窗口。`}
 										/>
 										<div className="factory-chart-grid grid gap-3 xl:grid-cols-2">
-											<FactoryPanel
-												title="提交产出与覆盖面"
-												hint="柱：每日默认分支提交（左轴）。线：截至当日 7 天内有提交的仓库数（右轴），看产出是集中在少数仓库还是全面推进。"
-											>
+											<FactoryPanel title="提交产出与覆盖面">
 												{board.observed.commits ? (
 													<CommitBreadthChart days={board.days} />
 												) : (
@@ -421,7 +407,7 @@ export function FactoryPage() {
 											</FactoryPanel>
 											<FactoryPanel
 												title="交付吞吐"
-												hint="柱：每天合并的 PR 与发布的 Release（左轴）。线：截至当日 7 天 CI 成功率（右轴）。未完整获取的日期只显示已知数量，没有数据时留空。事件类别相加，不代表唯一工作项。"
+												hint="未完整获取的日期只显示已知数量，无数据留空。事件类别相加，不代表唯一工作项。"
 											>
 												{board.observed.prs || board.observed.releases ? (
 													<DeliveryChart days={board.days} />
@@ -433,7 +419,7 @@ export function FactoryPage() {
 										<div className="factory-chart-grid grid gap-3 xl:grid-cols-2">
 											<FactoryPanel
 												title="PR 流量与存量"
-												hint="向上柱为每日新开 PR，向下为合并与未合并关闭（左轴）；阶梯线为日终 open PR 数（右轴）。"
+												hint="日终 open 存量由当前值按每日事件倒推。"
 											>
 												{board.observed.prs ? (
 													<FlowStockChart days={board.days} kind="prs" />
@@ -443,7 +429,7 @@ export function FactoryPage() {
 											</FactoryPanel>
 											<FactoryPanel
 												title="Issue 流量与存量"
-												hint="向上柱为每日新开 Issue，向下为关闭（左轴）；阶梯线为日终 open Issue 数（右轴）。线上升说明积压在增加。"
+												hint="日终 open 存量由当前值按每日事件倒推。"
 											>
 												{board.observed.issues ? (
 													<FlowStockChart days={board.days} kind="issues" />
@@ -454,7 +440,7 @@ export function FactoryPage() {
 										</div>
 										<FactoryPanel
 											title="仓库变化矩阵"
-											hint={`每行一个仓库。提交列为最近 1、7、30 个完整统计日，颜色深浅按列内最大值；周环比对比前 7 天。PR 与 Issue 列使用上方选中的 ${period} 天区间，积压为当前 open 数。`}
+											hint={`PR 与 Issue 列对应上方选中的 ${period} 天区间。`}
 											flush
 										>
 											<RepoPeriodMatrix
@@ -476,7 +462,6 @@ export function FactoryPage() {
 								<SectionRule
 									id="factory-stock-title"
 									title={<IconLabel icon={Boxes}>存量 · 我名下全部仓库</IconLabel>}
-									hint="当前时点的积累：规模、历史总量与未完成的工作。"
 								/>
 								<KpiRow>
 									<Kpi
@@ -565,7 +550,7 @@ export function FactoryPage() {
 								<div className="factory-chart-grid grid gap-3 xl:grid-cols-3">
 									<FactoryPanel
 										title="仓库规模地图"
-										hint="面积按 GitHub 统计的语言字节数分配，不是代码行数。点击色块查看仓库；零字节仓库仍在下方表格中。"
+										hint="面积按 GitHub 语言字节数分配，非代码行数。"
 									>
 										<FactoryTreemap repos={scope} onSelect={(name) => drill(name, "commits")} />
 										<div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-basalt-muted-foreground">
@@ -595,7 +580,7 @@ export function FactoryPage() {
 									</FactoryPanel>
 									<FactoryPanel
 										title="提交与待办"
-										hint="每个点是一座仓库：横轴为最近 30 天提交（对数刻度），纵轴为当前 open Issue 与 PR，颜色为主语言。虚线为中位数；左上阴影区积压高于中位数、推进低于中位数，最值得检查。"
+										hint="虚线为中位数，左上阴影区表示积压高、推进少。"
 									>
 										<ActivityQuadrant
 											activity={board.repoActivity}
@@ -604,7 +589,7 @@ export function FactoryPage() {
 									</FactoryPanel>
 									<FactoryPanel
 										title="工作流量账"
-										hint="分别统计 Issue 与 PR 的创建、待处理和完成数量，不推断两者的关联。「期间」指当前统计窗口，Issue 按最后关闭时间计数。各阶段不一定是同一批工作项。"
+										hint="「期间」指当前统计窗口，各阶段不一定是同一批工作项。"
 									>
 										<div className="factory-flow">
 											<FlowRow
@@ -638,7 +623,7 @@ export function FactoryPage() {
 								<div className="grid gap-3 xl:grid-cols-[1.3fr_1fr]">
 									<FactoryPanel
 										title="需要检查的信号"
-										hint={`PR 超过 7 天、Issue 超过 14 天仍未关闭，或 CI 至少运行 10 次且失败率不低于 20% 时提醒检查。按项目分组，展开查看每条信号；每页 ${SIGNAL_PAGE_SIZE} 个项目。`}
+										hint="触发规则：PR ≥7 天、Issue ≥14 天未关闭，或 CI 运行 ≥10 次且失败率 ≥20%。"
 									>
 										<div className="factory-signal-list">
 											{signalPages.groups ? (
@@ -729,7 +714,7 @@ export function FactoryPage() {
 									</FactoryPanel>
 									<FactoryPanel
 										title="依赖与维护"
-										hint="基于根 package.json 与工作流中的直接引用；不含传递或动态依赖，全局图不随语言/topic 筛选缩减。"
+										hint="仅统计根 package.json 与工作流的直接引用，不随语言/topic 筛选缩减。"
 									>
 										<div className="flex flex-wrap gap-4 text-xs">
 											<span>
@@ -800,11 +785,7 @@ export function FactoryPage() {
 									</FactoryPanel>
 								</div>
 							</section>
-							<FactoryPanel
-								title="仓库生产线 · 按窗口提交量排序"
-								hint="每行是一条生产线，点击仓库或指标下钻"
-								flush
-							>
+							<FactoryPanel title="仓库生产线 · 按窗口提交量排序" flush>
 								<div className="factory-table-scroll">
 									<Table>
 										<TableHeader>
@@ -978,7 +959,7 @@ export function FactoryPage() {
 								id="factory-ledger"
 								open={Boolean(day) && calendar === "commits"}
 							>
-								<summary>每日账本 · 可访问的图表数据与趋势核对</summary>
+								<summary>每日账本</summary>
 								<div className="factory-table-scroll">
 									<Table>
 										<caption className="sr-only">

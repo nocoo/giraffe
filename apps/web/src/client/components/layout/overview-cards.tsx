@@ -32,11 +32,11 @@ export function OverviewCard({
 	children,
 }: {
 	title: string;
-	hint: string;
+	hint?: string;
 	children: ReactNode;
 }) {
 	return (
-		<ChartBrick title={title} description={hint}>
+		<ChartBrick title={title} {...(hint ? { description: hint } : {})}>
 			{children}
 		</ChartBrick>
 	);

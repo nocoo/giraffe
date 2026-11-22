@@ -223,7 +223,7 @@ test("real unified refresh reloads data, respects stars and supports an unstarre
 	const period = page.locator(".factory-period");
 	await period.getByRole("radio", { name: "1 天", exact: true }).click();
 	await expect(period.locator("dl > div").first().locator("strong")).toHaveText("2");
-	await page.getByText("每日账本 · 可访问的图表数据与趋势核对", { exact: true }).click();
+	await page.getByText("每日账本", { exact: true }).click();
 	const nextDay = new Date(Date.parse(yesterday) + 86_400_000).toISOString().slice(0, 10);
 	const calendarRow = page.locator("#factory-ledger tr").filter({
 		has: page.getByRole("rowheader", {

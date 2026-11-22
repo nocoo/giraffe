@@ -89,7 +89,7 @@ export function factoryError(error: unknown): string {
 	if (error instanceof ApiError) {
 		if (error.code === "account_conflict") return "账号已切换，请重新读取已保存的快照。";
 		if (error.code === "account_missing") return "请先在设置中连接 GitHub 账号。";
-		if (error.code === "snapshot_missing") return "暂无已保存的资源快照；缺失不代表没有记录。";
+		if (error.code === "snapshot_missing") return "暂无已保存的快照。";
 		if (error.code === "github_unauthorized") return "GitHub 令牌失效，请在设置中更新。";
 	}
 	return "暂时无法读取已保存的快照，请稍后重试。";

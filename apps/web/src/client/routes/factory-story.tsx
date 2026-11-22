@@ -768,10 +768,7 @@ export function BacklogPanel({
 }) {
 	const backlog = backlogRows(activity);
 	return (
-		<FactoryPanel
-			title="积压任务"
-			hint="按仓库当前 open Issue 与 PR 排序。深色段为长龄（Issue ≥14 天、PR ≥7 天），右侧为最近 30 天完成数，用来判断积压是在消化还是在堆积。"
-		>
+		<FactoryPanel title="积压任务" hint="深色段为长龄（Issue ≥14 天、PR ≥7 天）。">
 			<div className="factory-backlog-head">
 				<div>
 					<strong>{n(backlog.openIssues + backlog.openPrs)}</strong>
@@ -845,8 +842,7 @@ export function ActivityQuadrant({
 	onSelect: (repo: string) => void;
 }) {
 	const q = activityQuadrant(activity);
-	if (!q.points.length)
-		return <p className="factory-chart-empty">当前范围还没有可用的提交观测，未画成零。</p>;
+	if (!q.points.length) return <p className="factory-chart-empty">尚无提交观测。</p>;
 	// Commits are heavily skewed across repositories; a log axis (offset by one for zero) keeps the tail readable.
 	const points = q.points.map((p, i) => ({
 		...p,
@@ -955,25 +951,21 @@ export function ActivityQuadrant({
 					</Scatter>
 				</ScatterChart>
 			</ChartFrame>
-			<p className="factory-quadrant-note">
-				{q.stalled.length ? (
-					<>
-						<span>积压高、推进少：</span>
-						{q.stalled.slice(0, 5).map((p) => (
-							<button
-								key={p.name}
-								type="button"
-								className="factory-link"
-								onClick={() => onSelect(p.name)}
-							>
-								{p.name.split("/")[1]}
-							</button>
-						))}
-					</>
-				) : (
-					"没有仓库同时处于积压高于中位数、提交低于中位数的区域。"
-				)}
-			</p>
+			{q.stalled.length ? (
+				<p className="factory-quadrant-note">
+					<span>积压高、推进少：</span>
+					{q.stalled.slice(0, 5).map((p) => (
+						<button
+							key={p.name}
+							type="button"
+							className="factory-link"
+							onClick={() => onSelect(p.name)}
+						>
+							{p.name.split("/")[1]}
+						</button>
+					))}
+				</p>
+			) : null}
 		</>
 	);
 }
