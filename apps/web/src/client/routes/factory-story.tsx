@@ -400,10 +400,8 @@ export function FlowStockChart({ days, kind }: { days: Day[]; kind: "prs" | "iss
 			label: prs ? "合并 ↓" : "关闭 ↓",
 			color: FLOW_COLORS.closed,
 		},
-		...(prs
-			? [{ key: "rejected", label: "未合并关闭 ↓", color: "var(--color-basalt-muted-foreground)" }]
-			: []),
-		{ key: "stock", label: "Open 存量 · 右轴", color: "var(--color-basalt-foreground)" },
+		...(prs ? [{ key: "rejected", label: "未合并关闭 ↓", color: FLOW_COLORS.muted }] : []),
+		{ key: "stock", label: "Open 存量 · 右轴", color: FLOW_COLORS.stock },
 	];
 	const stockDomain = factoryCountAxisDomain(data.map((d) => d.stock));
 	const stockTicks = factoryCountAxisTicks(stockDomain);
@@ -470,14 +468,14 @@ export function FlowStockChart({ days, kind }: { days: Day[]; kind: "prs" | "iss
 									? [
 											{
 												label: "未合并关闭 ↓",
-												color: "var(--color-basalt-muted-foreground)",
+												color: FLOW_COLORS.muted,
 												value: (d: Day) => shown(d.prClosed, d.complete.prs),
 											},
 										]
 									: []),
 								{
 									label: "日终 open",
-									color: "var(--color-basalt-foreground)",
+									color: FLOW_COLORS.stock,
 									value: (d) => {
 										const v = prs ? d.openPrs : d.openIssues;
 										return v === null ? "无法倒推" : n(v);
@@ -507,8 +505,8 @@ export function FlowStockChart({ days, kind }: { days: Day[]; kind: "prs" | "iss
 						yAxisId="flow"
 						dataKey="rejected"
 						stackId="f"
-						fill="var(--color-basalt-muted-foreground)"
-						fillOpacity={0.6}
+						fill={FLOW_COLORS.muted}
+						fillOpacity={0.65}
 						{...ANIMATION_PROPS}
 					/>
 				) : null}
@@ -516,7 +514,7 @@ export function FlowStockChart({ days, kind }: { days: Day[]; kind: "prs" | "iss
 					yAxisId="stock"
 					dataKey="stock"
 					type="stepAfter"
-					stroke="var(--color-basalt-foreground)"
+					stroke={FLOW_COLORS.stock}
 					strokeWidth={2}
 					dot={false}
 					connectNulls={false}
@@ -768,7 +766,7 @@ export function BacklogPanel({
 }) {
 	const backlog = backlogRows(activity);
 	return (
-		<FactoryPanel title="积压任务" hint="深色段为长龄（Issue ≥14 天、PR ≥7 天）。">
+		<FactoryPanel title="积压任务" hint="长龄：Issue ≥14 天、PR ≥7 天。">
 			<div className="factory-backlog-head">
 				<div>
 					<strong>{n(backlog.openIssues + backlog.openPrs)}</strong>
@@ -905,12 +903,14 @@ export function ActivityQuadrant({
 					<ZAxis range={[48, 48]} />
 					<ReferenceLine
 						x={q.medianCommits}
-						stroke="var(--color-basalt-muted-foreground)"
+						stroke="var(--color-basalt-chart-axis)"
+						strokeOpacity={0.45}
 						strokeDasharray="4 4"
 					/>
 					<ReferenceLine
 						y={q.medianBacklog}
-						stroke="var(--color-basalt-muted-foreground)"
+						stroke="var(--color-basalt-chart-axis)"
+						strokeOpacity={0.45}
 						strokeDasharray="4 4"
 					/>
 					<Tooltip

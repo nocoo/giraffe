@@ -14,6 +14,8 @@ it("uses the Basalt candy cycle with stable named categories and safe fallback",
 	expect(categoryColor("TypeScript")).not.toBe(categoryColor("JavaScript"));
 	expect(categoryColor("JavaScript")).toBe(chartColor(3));
 	expect(FLOW_COLORS.opened).toBe(chartColor(3));
+	expect(FLOW_COLORS.stock).toBe(chartColor(0));
+	expect(FLOW_COLORS.muted).toBe(chartColor(4));
 	expect(categoryColor("new-language")).toBe(categoryColor("NEW-LANGUAGE"));
 	expect(categoryColor("未标记")).toBe(categoryColor(""));
 });

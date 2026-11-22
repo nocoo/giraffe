@@ -46,6 +46,7 @@ export const FLOW_COLORS = {
 	opened: YELLOW,
 	closed: chart.green,
 	release: chart.rose,
-	stock: YELLOW,
+	stock: chart.primary,
 	rate: chart.rose,
+	muted: chart.gray,
 } as const;
