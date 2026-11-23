@@ -196,7 +196,7 @@ function GiraffeSidebarBody({
 			.catch((err: unknown) => {
 				const ui = reportError(err);
 				if (ui.kind === "toast") {
-					toast.error(ui.message);
+					toast.danger(ui.message);
 				}
 			});
 	}, []);

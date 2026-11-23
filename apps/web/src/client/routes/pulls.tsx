@@ -96,7 +96,7 @@ export function PullsPage() {
 	);
 	useSnapshotRead(loadPulls, setSnap, (err) => {
 		const missing = catchLoad(err, (message) => {
-			toast.error(message);
+			toast.danger(message);
 		});
 		if (missing) {
 			setSnap(missing);

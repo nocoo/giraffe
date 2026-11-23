@@ -9,10 +9,12 @@ export function CandyBadge({
 	icon: Icon,
 	children,
 	...props
-}: { tone: CandyTone; icon?: LucideIcon } & Omit<ComponentProps<typeof Badge>, "variant">) {
+}: { tone: CandyTone; icon?: LucideIcon } & Omit<
+	ComponentProps<typeof Badge>,
+	"variant" | "tone"
+>) {
 	return (
 		<Badge
-			variant={null}
 			className={`${candyClass(tone)} shrink-0 gap-1.5 whitespace-nowrap ${className ?? ""}`}
 			{...props}
 		>

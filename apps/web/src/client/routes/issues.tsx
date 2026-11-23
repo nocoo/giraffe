@@ -74,7 +74,7 @@ export function IssuesPage() {
 
 	useSnapshotRead(loadIssues, setSnap, (err) => {
 		const missing = catchLoad(err, (message) => {
-			toast.error(message);
+			toast.danger(message);
 		});
 		if (missing) {
 			setSnap(missing);

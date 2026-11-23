@@ -45,7 +45,7 @@ function ActivityReadState({
 			setFailed(false);
 		},
 		(error) => {
-			const missing = catchLoad(error, (message) => toast.error(message));
+			const missing = catchLoad(error, (message) => toast.danger(message));
 			if (missing) setSnapshot(missing);
 			setFailed(true);
 		},

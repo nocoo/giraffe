@@ -39,6 +39,7 @@
 [data-basalt-table] tbody tr[aria-selected="true"] :is(th, td) { background: color-mix(in srgb, var(--color-basalt-primary) 10%, var(--basalt-control-fill)); }
 [data-basalt-table] tbody tr:hover:not([aria-selected="true"]) :is(th, td) { background: color-mix(in srgb, var(--color-basalt-primary) 5%, var(--basalt-control-fill)); }
 [data-slot=segment-control-viewport] [role=radio] { font-size: var(--text-xs); }
+[data-slot="sidebar-drawer"] > [data-slot="sheet-close"] { display: none; }
 .giraffe-select-field { display: flex; align-items: center; gap: .5rem; min-width: 0; }
 .giraffe-select-field > label { flex-shrink: 0; color: var(--color-basalt-muted-foreground); }
 .giraffe-select-field > button { min-width: 0; }

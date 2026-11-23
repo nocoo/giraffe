@@ -1,5 +1,5 @@
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
-import { SkeletonLine } from "@nocoo/basalt/components/skeleton-line";
+import { Skeleton } from "@nocoo/basalt/components/skeleton";
 import { Deferred } from "../components/layout/page-skeleton";
 import { type factoryBoard, formatFactoryCount as n } from "../viewmodels/factory";
 
@@ -49,24 +49,24 @@ export function FactorySkeleton() {
 		<Deferred>
 			<div role="status" aria-label="正在读取工厂快照" className="factory-skeleton space-y-4">
 				<div className="flex gap-3">
-					<SkeletonLine height={32} minWidth={12} maxWidth={14} />
-					<SkeletonLine height={32} minWidth={12} maxWidth={14} />
-					<SkeletonLine height={32} minWidth={18} maxWidth={20} />
+					<Skeleton height={32} width="13%" />
+					<Skeleton height={32} width="13%" />
+					<Skeleton height={32} width="19%" />
 				</div>
 				<LayerCard padding="md" className="grid grid-cols-2 gap-4 lg:grid-cols-5">
 					{["a", "b", "c", "d", "e"].map((id) => (
 						<div key={id} className="space-y-3">
-							<SkeletonLine height={10} minWidth={40} maxWidth={60} />
-							<SkeletonLine height={26} minWidth={44} maxWidth={56} />
-							<SkeletonLine height={10} minWidth={60} maxWidth={80} />
+							<Skeleton height={10} width="50%" />
+							<Skeleton height={26} width="50%" />
+							<Skeleton height={10} width="70%" />
 						</div>
 					))}
 				</LayerCard>
 				<div className="grid gap-3 xl:grid-cols-2">
 					{["commits", "delivery", "prs", "issues"].map((id) => (
 						<LayerCard key={id} padding="md" className="space-y-4">
-							<SkeletonLine height={12} minWidth={20} maxWidth={28} />
-							<SkeletonLine height={220} minWidth={100} maxWidth={100} />
+							<Skeleton height={12} width="24%" />
+							<Skeleton height={220} />
 						</LayerCard>
 					))}
 				</div>

@@ -170,7 +170,7 @@ export function InsightsPage() {
 
 	useSnapshotRead(loadInsightsBoard, setBoard, (err) => {
 		const missing = catchLoad(err, (message) => {
-			toast.error(message);
+			toast.danger(message);
 		});
 		if (missing) {
 			setBoard(missing);

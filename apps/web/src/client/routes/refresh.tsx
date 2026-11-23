@@ -246,7 +246,7 @@ function RefreshCenterBody({ center }: { center: RefreshCenterViewModel }) {
 			>
 				<Banner
 					size="sm"
-					variant={current?.status === "failed" ? "alert" : "secondary"}
+					tone={current?.status === "failed" ? "warning" : "neutral"}
 					className="refresh-health-message"
 					icon={bannerIcon}
 					description={
