@@ -181,7 +181,7 @@ function AppShellInner() {
 									{accountMissing ? (
 										<Banner
 											className="mb-4"
-											variant="alert"
+											tone="warning"
 											title="没有活跃账号"
 											action={
 												<Banner.Action type="button" onClick={() => navigate("/settings")}>

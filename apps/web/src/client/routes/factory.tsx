@@ -1,7 +1,7 @@
 import { Button, Input, SegmentControl } from "@nocoo/basalt";
 import { PageHeader } from "@nocoo/basalt/components/page-header";
 import { SectionRule } from "@nocoo/basalt/components/section-rule";
-import { StatStrip } from "@nocoo/basalt/components/stat-strip";
+import { StatCard, StatGrid } from "@nocoo/basalt/components/stat-card";
 import {
 	Table,
 	TableBody,
@@ -1065,13 +1065,18 @@ function FlowRow({
 	return (
 		<div>
 			<h3>{label}</h3>
-			<StatStrip
-				className="grid-cols-3 md:grid-cols-3 [&>div]:p-3"
-				items={values.map((value, index) => ({
-					label: labels[index],
-					value: value === null ? "—" : n(value),
-				}))}
-			/>
+			<StatGrid columns={3} className="[&>div]:p-3">
+				{values.map((value, index) => {
+					const itemLabel = labels[index] ?? "";
+					return (
+						<StatCard
+							key={itemLabel || index}
+							label={itemLabel}
+							value={value === null ? "—" : n(value)}
+						/>
+					);
+				})}
+			</StatGrid>
 		</div>
 	);
 }

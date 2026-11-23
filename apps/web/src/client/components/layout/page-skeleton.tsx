@@ -1,5 +1,5 @@
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
-import { SkeletonLine } from "@nocoo/basalt/components/skeleton-line";
+import { Skeleton } from "@nocoo/basalt/components/skeleton";
 import type { CSSProperties, ReactNode } from "react";
 
 const CHART_BARS = [32, 48, 40, 67, 55, 84, 69, 78] as const;
@@ -19,37 +19,23 @@ function TableRows({ columns, rows }: { columns: number; rows: number }) {
 		<LayerCard>
 			<div className="giraffe-skeleton-row border-b border-basalt-border">
 				<div>
-					<SkeletonLine height={10} minWidth={100} maxWidth={100} style={{ width: 96 }} />
+					<Skeleton height={10} width={96} />
 				</div>
 				{narrow.map((id) => (
-					<SkeletonLine key={id} height={10} minWidth={60} maxWidth={70} style={{ width: 64 }} />
+					<Skeleton key={id} height={10} width={64} />
 				))}
 			</div>
 			{range(rows, "row").map((id, index) => (
 				<div key={id} className="giraffe-skeleton-row">
 					<div className="flex min-w-0 items-center gap-2.5">
-						<SkeletonLine
-							height={32}
-							minWidth={100}
-							maxWidth={100}
-							className="shrink-0 rounded-md"
-							style={{ width: 32 }}
-						/>
+						<Skeleton height={32} width={32} className="shrink-0 rounded-md" />
 						<div className="min-w-0 flex-1 space-y-2">
-							<SkeletonLine
-								height={12}
-								minWidth={30 + (index % 3) * 10}
-								maxWidth={44 + (index % 3) * 10}
-							/>
-							<SkeletonLine
-								height={10}
-								minWidth={50 + (index % 4) * 6}
-								maxWidth={70 + (index % 4) * 6}
-							/>
+							<Skeleton height={12} width={`${37 + (index % 3) * 10}%`} />
+							<Skeleton height={10} width={`${60 + (index % 4) * 6}%`} />
 						</div>
 					</div>
 					{narrow.map((col) => (
-						<SkeletonLine key={col} height={12} minWidth={50} maxWidth={80} style={{ width: 64 }} />
+						<Skeleton key={col} height={12} width={64} />
 					))}
 				</div>
 			))}
@@ -79,16 +65,14 @@ function OverviewCardSkeleton({ kind, id }: { kind: "bars" | "rank" | "columns";
 	return (
 		<LayerCard className="min-w-0">
 			<div className="border-b border-basalt-border px-4 py-3">
-				<SkeletonLine height={12} minWidth={24} maxWidth={36} />
+				<Skeleton height={12} width="30%" />
 			</div>
 			<div className="p-4">
 				{kind === "columns" ? (
 					<div className="flex h-40 items-end gap-2">
 						{CHART_BARS.slice(0, 5).map((height) => (
-							<SkeletonLine
+							<Skeleton
 								key={`${id}-${height.toString()}`}
-								minWidth={100}
-								maxWidth={100}
 								height={height * 1.6}
 								className="flex-1"
 							/>
@@ -97,22 +81,16 @@ function OverviewCardSkeleton({ kind, id }: { kind: "bars" | "rank" | "columns";
 				) : kind === "bars" ? (
 					<div className="flex h-40 items-end gap-1">
 						{[...CHART_BARS, ...CHART_BARS].map((height, i) => (
-							<SkeletonLine
-								key={`${id}-${i.toString()}`}
-								minWidth={100}
-								maxWidth={100}
-								height={height * 1.4}
-								className="flex-1"
-							/>
+							<Skeleton key={`${id}-${i.toString()}`} height={height * 1.4} className="flex-1" />
 						))}
 					</div>
 				) : (
 					<div className="flex h-40 flex-col justify-between">
 						{range(6, id).map((row, i) => (
 							<div key={row} className="grid grid-cols-[5rem_1fr_2rem] items-center gap-3">
-								<SkeletonLine height={10} minWidth={60} maxWidth={90} />
-								<SkeletonLine height={8} minWidth={90 - i * 12} maxWidth={90 - i * 12} />
-								<SkeletonLine height={10} minWidth={100} maxWidth={100} />
+								<Skeleton height={10} width="75%" />
+								<Skeleton height={8} width={`${90 - i * 12}%`} />
+								<Skeleton height={10} />
 							</div>
 						))}
 					</div>
@@ -142,13 +120,7 @@ export function ListPageSkeleton({
 			<div role="status" aria-label={label} className="space-y-6">
 				<div className="flex flex-wrap gap-5">
 					{range(4, "stat").map((id, i) => (
-						<SkeletonLine
-							key={id}
-							height={12}
-							minWidth={100}
-							maxWidth={100}
-							style={{ width: i ? 96 : 144 }}
-						/>
+						<Skeleton key={id} height={12} width={i ? 96 : 144} />
 					))}
 				</div>
 				{cards.length ? (
@@ -163,9 +135,9 @@ export function ListPageSkeleton({
 					</div>
 				) : null}
 				<div className="flex items-center gap-3">
-					<SkeletonLine height={10} minWidth={100} maxWidth={100} style={{ width: 80 }} />
+					<Skeleton height={10} width={80} />
 					<div className="h-px flex-1 border-t border-dashed border-basalt-border" />
-					<SkeletonLine height={10} minWidth={100} maxWidth={100} style={{ width: 56 }} />
+					<Skeleton height={10} width={56} />
 				</div>
 				<TableRows columns={columns} rows={rows} />
 			</div>
@@ -180,15 +152,15 @@ export function DetailSkeleton({ label }: { label: string }) {
 				<div className="grid grid-cols-3 gap-3">
 					{["sk-a", "sk-b", "sk-c"].map((id) => (
 						<LayerCard key={id} className="space-y-3" padding="md">
-							<SkeletonLine height={8} minWidth={24} maxWidth={40} />
-							<SkeletonLine height={22} minWidth={36} maxWidth={52} />
+							<Skeleton height={8} width="32%" />
+							<Skeleton height={22} width="44%" />
 						</LayerCard>
 					))}
 				</div>
 				<LayerCard className="space-y-3" padding="md">
-					<SkeletonLine minWidth={44} maxWidth={68} />
-					<SkeletonLine minWidth={36} maxWidth={58} />
-					<SkeletonLine minWidth={28} maxWidth={40} height={12} />
+					<Skeleton width="56%" />
+					<Skeleton width="47%" />
+					<Skeleton width="34%" height={12} />
 				</LayerCard>
 			</div>
 		</Deferred>
@@ -199,7 +171,7 @@ function ChartCardSkeleton({ id, donut = false }: { id: string; donut?: boolean 
 	return (
 		<LayerCard className="min-w-0">
 			<div className="border-b border-basalt-border px-4 py-3">
-				<SkeletonLine height={12} minWidth={22} maxWidth={32} />
+				<Skeleton height={12} width="27%" />
 			</div>
 			<div className="flex h-64 items-end gap-2 p-4">
 				{donut ? (
@@ -208,13 +180,7 @@ function ChartCardSkeleton({ id, donut = false }: { id: string; donut?: boolean 
 					</div>
 				) : (
 					CHART_BARS.map((height) => (
-						<SkeletonLine
-							key={`${id}-${height.toString()}`}
-							minWidth={100}
-							maxWidth={100}
-							height={height * 2}
-							className="flex-1"
-						/>
+						<Skeleton key={`${id}-${height.toString()}`} height={height * 2} className="flex-1" />
 					))
 				)}
 			</div>
@@ -228,7 +194,7 @@ export function InsightsSkeleton({ label }: { label: string }) {
 		<Deferred>
 			<div className="space-y-8" role="status" aria-label={label}>
 				<div className="space-y-3">
-					<SkeletonLine height={10} minWidth={14} maxWidth={20} />
+					<Skeleton height={10} width="17%" />
 					<div className="giraffe-focus">
 						<LayerCard>
 							{range(5, "focus").map((id, i) => (
@@ -236,49 +202,28 @@ export function InsightsSkeleton({ label }: { label: string }) {
 									key={id}
 									className="grid grid-cols-[2rem_1fr_auto] gap-3 border-b border-basalt-border px-4 py-3 last:border-0"
 								>
-									<SkeletonLine
-										height={28}
-										minWidth={100}
-										maxWidth={100}
-										className="rounded-full"
-										style={{ width: 28 }}
-									/>
+									<Skeleton variant="circle" height={28} width={28} />
 									<div className="space-y-2">
-										<SkeletonLine
-											height={14}
-											minWidth={24 + (i % 3) * 6}
-											maxWidth={32 + (i % 3) * 6}
-										/>
-										<SkeletonLine height={10} minWidth={44} maxWidth={60} />
-										<SkeletonLine height={10} minWidth={30} maxWidth={46} />
+										<Skeleton height={14} width={`${28 + (i % 3) * 6}%`} />
+										<Skeleton height={10} width="52%" />
+										<Skeleton height={10} width="38%" />
 									</div>
-									<SkeletonLine
-										height={28}
-										minWidth={100}
-										maxWidth={100}
-										className="hidden lg:block"
-										style={{ width: 256 }}
-									/>
+									<Skeleton height={28} width={256} className="hidden lg:block" />
 								</div>
 							))}
 						</LayerCard>
 						<LayerCard padding="md" className="space-y-3">
-							<SkeletonLine height={12} minWidth={24} maxWidth={32} />
+							<Skeleton height={12} width="28%" />
 							{range(4, "finding").map((id, i) => (
-								<SkeletonLine
-									key={id}
-									height={10}
-									minWidth={70 + (i % 2) * 20}
-									maxWidth={80 + (i % 2) * 20}
-								/>
+								<Skeleton key={id} height={10} width={`${75 + (i % 2) * 20}%`} />
 							))}
 						</LayerCard>
 					</div>
 				</div>
 				{["work", "review"].map((section) => (
 					<div key={section} className="space-y-3">
-						<SkeletonLine height={10} minWidth={10} maxWidth={14} />
-						<SkeletonLine height={10} minWidth={30} maxWidth={40} />
+						<Skeleton height={10} width="12%" />
+						<Skeleton height={10} width="35%" />
 						<div className="grid gap-3 lg:grid-cols-2">
 							<ChartCardSkeleton id={`${section}-a`} />
 							<ChartCardSkeleton id={`${section}-b`} donut />
@@ -295,16 +240,10 @@ export function ChartSkeleton({ label }: { label: string }) {
 		<Deferred>
 			<LayerCard padding="md">
 				<div role="status" aria-label={label} className="space-y-3">
-					<SkeletonLine height={10} minWidth={22} maxWidth={36} />
+					<Skeleton height={10} width="29%" />
 					<div className="flex h-40 items-end gap-2">
 						{CHART_BARS.map((height) => (
-							<SkeletonLine
-								key={height}
-								minWidth={100}
-								maxWidth={100}
-								height={height}
-								className="flex-1"
-							/>
+							<Skeleton key={height} height={height} className="flex-1" />
 						))}
 					</div>
 				</div>
@@ -320,17 +259,11 @@ export function PeopleSkeleton({ label, rows = 6 }: { label: string; rows?: numb
 				<div role="status" aria-label={label} className="flex flex-col gap-4">
 					{Array.from({ length: rows }, (_, index) => (
 						<div key={`person-${index.toString()}`} className="flex items-center gap-3">
-							<SkeletonLine
-								minWidth={100}
-								maxWidth={100}
-								height={36}
-								className="rounded-full"
-								style={{ width: 36, flexShrink: 0 }}
-							/>
+							<Skeleton variant="circle" height={36} width={36} />
 							<div className="min-w-0 flex-1">
-								<SkeletonLine minWidth={28} maxWidth={48} />
+								<Skeleton width="38%" />
 							</div>
-							<SkeletonLine minWidth={12} maxWidth={18} height={10} />
+							<Skeleton width="15%" height={10} />
 						</div>
 					))}
 				</div>
@@ -345,13 +278,13 @@ export function CiSkeleton({ label }: { label: string }) {
 		<Deferred>
 			<div role="status" aria-label={label} className="space-y-6">
 				<LayerCard padding="md" className="space-y-4">
-					<SkeletonLine height={8} minWidth={100} maxWidth={100} className="rounded-full" />
+					<Skeleton height={8} className="rounded-full" />
 					<div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
 						{range(4, "tile").map((id) => (
 							<div key={id} className="space-y-2 border-l-2 border-basalt-border pl-3">
-								<SkeletonLine height={10} minWidth={40} maxWidth={50} />
-								<SkeletonLine height={24} minWidth={20} maxWidth={24} />
-								<SkeletonLine height={10} minWidth={60} maxWidth={70} />
+								<Skeleton height={10} width="45%" />
+								<Skeleton height={24} width="22%" />
+								<Skeleton height={10} width="65%" />
 							</div>
 						))}
 					</div>
@@ -359,10 +292,10 @@ export function CiSkeleton({ label }: { label: string }) {
 				<div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
 					{range(3, "broken").map((id) => (
 						<LayerCard key={id} padding="md" className="space-y-3 border-l-2 border-basalt-border">
-							<SkeletonLine height={14} minWidth={50} maxWidth={60} />
-							<SkeletonLine height={10} minWidth={30} maxWidth={36} />
-							<SkeletonLine height={20} minWidth={40} maxWidth={44} />
-							<SkeletonLine height={10} minWidth={60} maxWidth={70} />
+							<Skeleton height={14} width="55%" />
+							<Skeleton height={10} width="33%" />
+							<Skeleton height={20} width="42%" />
+							<Skeleton height={10} width="65%" />
 						</LayerCard>
 					))}
 				</div>
@@ -382,28 +315,22 @@ export function RepoDetailSkeleton({ label }: { label: string }) {
 			<div role="status" aria-label={label} className="space-y-4">
 				<div className="flex gap-6 border-b border-basalt-border pb-3">
 					{range(10, "tab").map((id) => (
-						<SkeletonLine
-							key={id}
-							height={12}
-							minWidth={100}
-							maxWidth={100}
-							style={{ width: 52 }}
-						/>
+						<Skeleton key={id} height={12} width={52} />
 					))}
 				</div>
 				<div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
 					{range(5, "kpi").map((id) => (
 						<LayerCard key={id} padding="md" className="space-y-3">
-							<SkeletonLine height={10} minWidth={36} maxWidth={44} />
-							<SkeletonLine height={24} minWidth={24} maxWidth={32} />
-							<SkeletonLine height={10} minWidth={56} maxWidth={70} />
+							<Skeleton height={10} width="40%" />
+							<Skeleton height={24} width="28%" />
+							<Skeleton height={10} width="63%" />
 						</LayerCard>
 					))}
 				</div>
 				<ChartCardSkeleton id="activity" />
 				<LayerCard padding="md" className="space-y-3">
-					<SkeletonLine height={12} minWidth={14} maxWidth={18} />
-					<SkeletonLine height={4} minWidth={100} maxWidth={100} />
+					<Skeleton height={12} width="16%" />
+					<Skeleton height={4} />
 				</LayerCard>
 			</div>
 		</Deferred>
@@ -416,9 +343,9 @@ export function ActivitySkeleton({ label, compact = false }: { label: string; co
 		<Deferred>
 			<div role="status" aria-label={label} className="space-y-4">
 				<LayerCard padding="md" className="space-y-3">
-					<SkeletonLine height={12} minWidth={18} maxWidth={26} />
-					<SkeletonLine height={16} minWidth={40} maxWidth={56} />
-					<SkeletonLine height={10} minWidth={28} maxWidth={40} />
+					<Skeleton height={12} width="22%" />
+					<Skeleton height={16} width="48%" />
+					<Skeleton height={10} width="34%" />
 				</LayerCard>
 				<div
 					className={
@@ -429,8 +356,8 @@ export function ActivitySkeleton({ label, compact = false }: { label: string; co
 				>
 					{range(compact ? 6 : 4, "act-kpi").map((id) => (
 						<LayerCard key={id} padding="md" className="space-y-2.5">
-							<SkeletonLine height={10} minWidth={42} maxWidth={56} />
-							<SkeletonLine height={24} minWidth={24} maxWidth={34} />
+							<Skeleton height={10} width="49%" />
+							<Skeleton height={24} width="29%" />
 						</LayerCard>
 					))}
 				</div>
@@ -441,9 +368,9 @@ export function ActivitySkeleton({ label, compact = false }: { label: string; co
 				>
 					{range(compact ? 6 : 4, "act-sec").map((id) => (
 						<LayerCard key={id} padding="md" className="space-y-3">
-							<SkeletonLine height={12} minWidth={24} maxWidth={36} />
-							<SkeletonLine height={12} minWidth={64} maxWidth={86} />
-							<SkeletonLine height={12} minWidth={48} maxWidth={72} />
+							<Skeleton height={12} width="30%" />
+							<Skeleton height={12} width="75%" />
+							<Skeleton height={12} width="60%" />
 						</LayerCard>
 					))}
 				</div>
@@ -460,8 +387,8 @@ export function RefreshSkeleton({ label }: { label: string }) {
 				<div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
 					{range(4, "ref-kpi").map((id) => (
 						<LayerCard key={id} padding="md" className="space-y-2.5">
-							<SkeletonLine height={10} minWidth={40} maxWidth={54} />
-							<SkeletonLine height={22} minWidth={26} maxWidth={38} />
+							<Skeleton height={10} width="47%" />
+							<Skeleton height={22} width="32%" />
 						</LayerCard>
 					))}
 				</div>
@@ -475,16 +402,10 @@ export function RefreshSkeleton({ label }: { label: string }) {
 export function IdentitySkeleton() {
 	return (
 		<div role="status" aria-label="加载身份" className="flex items-center gap-3">
-			<SkeletonLine
-				height={40}
-				minWidth={100}
-				maxWidth={100}
-				className="shrink-0 rounded-full"
-				style={{ width: 40 }}
-			/>
+			<Skeleton variant="circle" height={40} width={40} />
 			<div className="min-w-0 flex-1 space-y-2">
-				<SkeletonLine height={14} minWidth={24} maxWidth={36} />
-				<SkeletonLine height={12} minWidth={40} maxWidth={56} />
+				<Skeleton height={14} width="30%" />
+				<Skeleton height={12} width="48%" />
 			</div>
 		</div>
 	);
@@ -496,8 +417,8 @@ export function RouteSkeleton({ label = "加载页面" }: { label?: string }) {
 		<Deferred>
 			<div role="status" aria-label={label} className="space-y-4 p-1">
 				<div className="space-y-2">
-					<SkeletonLine height={22} minWidth={18} maxWidth={26} />
-					<SkeletonLine height={12} minWidth={32} maxWidth={44} />
+					<Skeleton height={22} width="22%" />
+					<Skeleton height={12} width="38%" />
 				</div>
 				<div className="grid gap-3 md:grid-cols-3">
 					<OverviewCardSkeleton kind="bars" id="route-a" />

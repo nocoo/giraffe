@@ -71,7 +71,7 @@ export function CiPage() {
 	const [snap, setSnap] = useState<CiReportResponse | { missing: true } | null>(null);
 	const [filters, setFilters] = useState({ verdict: "", repo: "", query: "" });
 	useSnapshotRead(loadCi, setSnap, (err) => {
-		const missing = catchLoad(err, (message) => toast.error(message));
+		const missing = catchLoad(err, (message) => toast.danger(message));
 		if (missing) setSnap(missing);
 	});
 	const report = snap && !("missing" in snap) ? snap : null;

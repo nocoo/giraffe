@@ -1,5 +1,5 @@
 import { LayerCard } from "@nocoo/basalt/components/layer-card";
-import { StatStrip } from "@nocoo/basalt/components/stat-strip";
+import { StatCard, StatGrid } from "@nocoo/basalt/components/stat-card";
 import { CalendarDays, Clock3, Database } from "@nocoo/basalt/icons";
 import type { ActivitySnapshot } from "../../lib/activity-types";
 import { DataTimeSource } from "../components/layout/data-time";
@@ -63,17 +63,14 @@ export function CompactRepoActivity({ snapshot }: { snapshot: ActivitySnapshot }
 					</span>
 				</div>
 			</LayerCard>
-			<StatStrip
-				className="[&>div]:p-3 md:grid-cols-3 xl:grid-cols-6"
-				items={[
-					{ label: "合并 PR", value: totals.merged },
-					{ label: "依赖 PR", value: totals.dependency },
-					{ label: "其他 PR", value: totals.other },
-					{ label: "新开 Issue", value: totals.opened },
-					{ label: "关闭 Issue", value: totals.closed },
-					{ label: <span title="不含独立标签">发布版本</span>, value: totals.releases },
-				]}
-			/>
+			<StatGrid className="[&>div]:p-3 md:!grid-cols-3 xl:!grid-cols-6">
+				<StatCard label="合并 PR" value={totals.merged} />
+				<StatCard label="依赖 PR" value={totals.dependency} />
+				<StatCard label="其他 PR" value={totals.other} />
+				<StatCard label="新开 Issue" value={totals.opened} />
+				<StatCard label="关闭 Issue" value={totals.closed} />
+				<StatCard label="发布版本" value={totals.releases} />
+			</StatGrid>
 			{incomplete ? (
 				<p className="text-xs text-basalt-muted-foreground" role="note">
 					部分区块记录不完整，各区块数量仅为下界。

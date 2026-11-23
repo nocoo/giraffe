@@ -171,7 +171,7 @@ export function ReposPage() {
 				</Tooltip>
 				{source ? (
 					<Badge
-						variant="secondary"
+						tone="neutral"
 						className="text-xs"
 						role="note"
 						aria-label={`${repo.name_with_owner} 星标来源：${repo.star_source}`}
@@ -197,7 +197,7 @@ export function ReposPage() {
 		},
 		(err) => {
 			const missing = catchLoad(err, (message) => {
-				toast.error(message);
+				toast.danger(message);
 			});
 			if (missing) {
 				setSnap(missing);

@@ -135,7 +135,7 @@ function useRepoTabRead<Value extends { account_id: string }>(
 		() => fetchTab<Value>(owner, name, tab),
 		receive,
 		(error) => {
-			const missing = catchLoad(error, (message) => toast.error(message));
+			const missing = catchLoad(error, (message) => toast.danger(message));
 			if (missing) receive(missing);
 		},
 		enabled,

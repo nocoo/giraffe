@@ -61,7 +61,7 @@ export function SettingsPage() {
 
 	function onLoadError(err: unknown): void {
 		catchLoad(err, (message) => {
-			toast.error(message);
+			toast.danger(message);
 		});
 	}
 
@@ -86,7 +86,7 @@ export function SettingsPage() {
 			})
 			.catch((err: unknown) => {
 				catchLoad(err, (message) => {
-					toast.error(message);
+					toast.danger(message);
 				});
 			});
 	}, []);

@@ -73,7 +73,7 @@ export function InboxPage() {
 
 	function onLoadError(err: unknown): void {
 		const missing = catchLoad(err, (message) => {
-			toast.error(message);
+			toast.danger(message);
 		});
 		if (missing) {
 			setSnap(missing);
