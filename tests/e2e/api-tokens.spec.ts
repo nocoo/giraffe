@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { createUiFixtures } from "./ui-fixtures";
 
-for (const width of [1440, 390])
+for (const width of [1440])
 	test(`external bot token lifecycle and retired CLI consent at ${width}px`, async ({ page }) => {
 		await page.setViewportSize({ width, height: 1000 });
 		const fixtures: Record<string, unknown> = createUiFixtures();

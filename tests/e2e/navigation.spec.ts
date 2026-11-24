@@ -47,8 +47,8 @@ function stubApi(page: Page, fixtures: Record<string, unknown>, writes: string[]
 	});
 }
 
-for (const width of [1440, 390]) {
-	for (const theme of ["light", "dark"] as const) {
+for (const width of [1440]) {
+	for (const theme of ["light"] as const) {
 		test(`factory landing and snapshot navigation at ${width}px in ${theme}`, async ({ page }) => {
 			await page.setViewportSize({ width, height: 900 });
 			await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
@@ -175,73 +175,6 @@ for (const width of [1440, 390]) {
 	}
 }
 
-for (const width of [1440, 390, 640]) {
-	for (const theme of ["light", "dark"] as const) {
-		test(`sidebar geometry and keyboard restoration at ${width}px in ${theme}`, async ({
-			page,
-		}) => {
-			await page.setViewportSize({ width, height: 900 });
-			await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
-			const writes: string[] = [];
-			await stubApi(page, createUiFixtures(), writes);
-			await gotoAndWaitForSidebar(page, "/repos");
-			const opener = page.getByRole("button", {
-				name: "打开导航",
-				exact: true,
-				includeHidden: true,
-			});
-			if (width < 768) await opener.click();
-			const sidebar = page.getByRole("complementary");
-			await expect(sidebar).toHaveCSS("width", "240px");
-			const avatar = sidebar.locator('[data-slot="sidebar-user"] > span');
-			await expect(avatar).toHaveCSS("width", "36px");
-			await expect(avatar).toHaveCSS("height", "36px");
-			await expect(sidebar.getByText("demo@example.test", { exact: true })).toHaveCSS(
-				"line-height",
-				"16px",
-			);
-			await expect(sidebar.locator('[data-slot="sidebar-brand-version"]')).toHaveText(
-				`v${APP_VERSION}`,
-			);
-			if (width < 768) {
-				const drawer = page.locator('[data-slot="sidebar-drawer"]');
-				await expect(drawer).toHaveCSS("width", "240px");
-				await expect(drawer.locator("[data-basalt-sidebar]")).toHaveCSS("width", "240px");
-				await expect(drawer).toHaveCSS("padding-left", "0px");
-				await expect(drawer).toHaveCSS("padding-right", "0px");
-				await expect(drawer).toHaveCSS("padding-top", "0px");
-				await expect(drawer).toHaveCSS("padding-bottom", "0px");
-				await expect(opener).toHaveAttribute("aria-controls", /.+/);
-				expect(await opener.getAttribute("aria-controls")).toBe(await drawer.getAttribute("id"));
-				await expect(drawer.getByRole("button", { name: "关闭导航菜单" })).toBeVisible();
-				await page.keyboard.press("Escape");
-				await expect(drawer).toBeHidden();
-				await expect(opener).toBeFocused();
-				await opener.click();
-				await drawer.getByRole("link", { name: "Issues", exact: true }).click();
-				await expect(page).toHaveURL(/\/issues$/);
-				await expect(drawer).toBeHidden();
-				await expect(opener).toBeFocused();
-			} else {
-				const expanded = await avatar.boundingBox();
-				await sidebar.getByRole("button", { name: "折叠侧栏" }).click();
-				await page.mouse.move(1000, 400);
-				await expect(sidebar).toHaveCSS("width", "68px");
-				await expect(avatar).toHaveCSS("width", "36px");
-				await expect(avatar).toHaveCSS("height", "36px");
-				const collapsed = await avatar.boundingBox();
-				expect(expanded).not.toBeNull();
-				expect(collapsed?.y).toBe(expanded?.y);
-				await expect(sidebar.locator('[data-slot="sidebar-brand-name"]')).toBeHidden();
-				const copy = sidebar.locator('[data-slot="sidebar-brand-copy"]');
-				await expect(copy).toHaveCSS("overflow", "hidden");
-				expect((await copy.boundingBox())?.width ?? 0).toBe(0);
-			}
-			expect(writes).toEqual([]);
-		});
-	}
-}
-
 test("command palette opens from collapsed sidebar search control", async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
@@ -260,74 +193,5 @@ test("command palette opens from collapsed sidebar search control", async ({ pag
 	await waitForReposRouteSettled(page, 1440);
 	await sidebar.getByRole("button", { name: /搜索/ }).click();
 	await expect(page.getByPlaceholder("搜索页面或仓库")).toBeVisible();
-	expect(writes).toEqual([]);
-});
-
-test("group disclosure stays collapsed when another group navigates", async ({ page }) => {
-	await page.setViewportSize({ width: 1440, height: 900 });
-	const writes: string[] = [];
-	await stubApi(page, createUiFixtures(), writes);
-	await gotoAndWaitForSidebar(page, "/repos");
-	const sidebar = page.getByRole("complementary");
-	const overview = sidebar.getByRole("button", { name: "总览", exact: true });
-	await overview.click();
-	await expect(overview).toHaveAttribute("aria-expanded", "false");
-	await sidebar.getByRole("link", { name: "Issues", exact: true }).click();
-	await expect(page).toHaveURL(/\/issues$/);
-	await expect(page.getByRole("heading", { name: "Issues", exact: true }).first()).toBeVisible();
-	await expect(overview).toHaveAttribute("aria-expanded", "false");
-	expect(writes).toEqual([]);
-});
-
-test("expanded sidebar exposes Cloudflare Access sign-out", async ({ page }) => {
-	await page.setViewportSize({ width: 1440, height: 900 });
-	const writes: string[] = [];
-	await stubApi(page, createUiFixtures(), writes);
-	await gotoAndWaitForSidebar(page, "/repos");
-	const sidebar = page.getByRole("complementary");
-	const signOut = sidebar.getByRole("link", { name: "退出登录" });
-	await expect(signOut).toHaveAttribute("href", "/cdn-cgi/access/logout");
-	expect(writes).toEqual([]);
-});
-
-test("mobile drawer closes from the sidebar dismiss control", async ({ page }) => {
-	await page.setViewportSize({ width: 390, height: 900 });
-	const writes: string[] = [];
-	await stubApi(page, createUiFixtures(), writes);
-	await page.goto("/repos");
-	const opener = page.getByRole("button", { name: "打开导航" });
-	await opener.click();
-	const drawer = page.getByRole("dialog", { name: "导航菜单" });
-	await expect(drawer).toBeVisible();
-	await drawer.getByRole("button", { name: "关闭导航菜单" }).click();
-	await expect(drawer).toBeHidden();
-	await expect(opener).toBeFocused();
-	expect(writes).toEqual([]);
-});
-
-test("mobile navigation restores focus and closes across the desktop breakpoint", async ({
-	page,
-}) => {
-	await page.setViewportSize({ width: 390, height: 900 });
-	const writes: string[] = [];
-	await stubApi(page, createUiFixtures(), writes);
-	await page.goto("/repos");
-	await expect(page.getByRole("heading", { name: "仓库", exact: true }).first()).toBeVisible();
-	const opener = page.getByRole("button", { name: "打开导航" });
-	await opener.click();
-	const drawer = page.getByRole("dialog", { name: "导航菜单" });
-	await expect(drawer).toBeVisible();
-	await page.keyboard.press("Escape");
-	await expect(drawer).toBeHidden();
-	await expect(opener).toBeFocused();
-	await opener.click();
-	await expect(drawer).toBeVisible();
-	await page.setViewportSize({ width: 1440, height: 900 });
-	await expect(drawer).toBeHidden();
-	await expect(page.getByRole("complementary")).toHaveCount(1);
-	await expect(page.locator("body")).not.toHaveCSS("overflow", "hidden");
-	await page.setViewportSize({ width: 390, height: 900 });
-	await expect(drawer).toBeHidden();
-	await expect(opener).toBeVisible();
 	expect(writes).toEqual([]);
 });

@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { executeD1FixtureSync } from "../fixtures/d1";
+import { executeLocalD1Sync as executeD1FixtureSync } from "./local-d1";
 import { savedSnapshotSql } from "./saved-fixture";
 
 const base = process.env.GIRAFFE_E2E ?? "http://127.0.0.1:17045";

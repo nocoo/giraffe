@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import type { ActivitySnapshot } from "../../apps/web/src/lib/activity-types";
 import { activityFixture, activityPr, activityRun } from "../e2e/activity-fixtures";
-import { executeD1FixtureSync } from "../fixtures/d1";
+import { executeLocalD1Sync as executeD1FixtureSync } from "./local-d1";
 import { savedSnapshotSql } from "./saved-fixture";
 
 const base = process.env.GIRAFFE_E2E ?? "http://127.0.0.1:17045";
