@@ -21,4 +21,16 @@ it("builds avatar urls and fallback letters for bots", () => {
 	);
 	expect(githubAvatarLetter("dependabot[bot]")).toBe("D");
 	expect(githubAvatarLetter("")).toBe("?");
+	expect(githubAvatarLetter(null)).toBe("?");
+	expect(githubAvatarLetter(undefined)).toBe("?");
+	expect(githubAvatarLetter("   ")).toBe("?");
+	expect(githubAvatarLetter("___")).toBe("_");
+	expect(githubAvatarColor("")).toBe("#0f766e");
+	expect(githubAvatarColor("   ")).toBe("#0f766e");
+	expect(resolveGithubAvatarUrl(null)).toBeNull();
+	expect(resolveGithubAvatarUrl(undefined)).toBeNull();
+	expect(resolveGithubAvatarUrl("   ")).toBeNull();
+	expect(resolveGithubAvatarUrl("octocat", "   ", 128)).toBe(
+		"https://avatars.githubusercontent.com/octocat?size=128",
+	);
 });
