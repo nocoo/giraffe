@@ -218,14 +218,16 @@ async function suite(name: "A" | "B"): Promise<void> {
 	});
 	try {
 		await waitLive(60_000);
+		const suiteBTests = [
+			"tests/api/matrix.test.ts",
+			"tests/api/project-identity.test.ts",
+			"tests/api/collection-retirement.test.ts",
+		];
+		const targets =
+			process.argv.length > 2 ? process.argv.slice(2) : name === "B" ? suiteBTests : ["tests/api"];
 		await run(
 			join(root, "node_modules/.bin/vitest"),
-			[
-				"run",
-				...(process.argv.length > 2 ? process.argv.slice(2) : ["tests/api"]),
-				"--config",
-				"vitest.e2e.config.ts",
-			],
+			["run", ...targets, "--config", "vitest.e2e.config.ts"],
 			{
 				GIRAFFE_SUITE: name,
 				GIRAFFE_E2E: "http://127.0.0.1:17045",
@@ -377,7 +379,6 @@ const github = await listen(17046, (req, res) => {
 			}
 			const factoryResponse = factoryGraphqlStub(query, variables);
 			if (factoryResponse) {
-				await Bun.sleep(300);
 				sendJson(res, 200, factoryResponse);
 				return;
 			}

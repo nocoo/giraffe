@@ -8,8 +8,8 @@ import type {
 } from "../../apps/web/src/lib/factory-types";
 import type { SnapshotFreshness } from "../../apps/web/src/lib/snapshot-freshness";
 import { savedContentMeta } from "../../apps/web/src/server/lib/content-version";
-import { executeD1FixtureSync } from "../fixtures/d1";
 import { factoryFixture } from "../fixtures/factory-snapshot";
+import { executeLocalD1Sync as executeD1FixtureSync } from "./local-d1";
 import { publicationSql, savedSnapshotSql } from "./saved-fixture";
 
 const base = process.env.GIRAFFE_E2E ?? "http://127.0.0.1:17045";

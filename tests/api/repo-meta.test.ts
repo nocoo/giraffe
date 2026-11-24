@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import type { RepoMeta } from "../../apps/web/src/lib/repo-meta";
-import { executeD1FixtureSync } from "../fixtures/d1";
+import { executeLocalD1Sync as executeD1FixtureSync } from "./local-d1";
 import { savedRepositorySql, savedSnapshotSql } from "./saved-fixture";
 
 const base = process.env.GIRAFFE_E2E ?? "http://127.0.0.1:17045";

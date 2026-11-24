@@ -221,7 +221,6 @@ const github = await listen(githubPort, (req, res) => {
 			}
 			const factoryResponse = factoryGraphqlStub(query, request.variables ?? {});
 			if (factoryResponse) {
-				await Bun.sleep(300);
 				sendJson(res, 200, factoryResponse);
 				return;
 			}
@@ -277,7 +276,6 @@ const github = await listen(githubPort, (req, res) => {
 			return;
 		}
 		if (url.pathname.startsWith("/repos/octocat/hello-world/")) {
-			await Bun.sleep(200);
 			const history = factoryRestStub(url);
 			if (history !== null) {
 				sendJson(res, 200, history);

@@ -1,8 +1,8 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { executeD1FixtureSync } from "../fixtures/d1";
 import { dailyReport } from "../fixtures/daily-report";
+import { executeLocalD1Sync as executeD1FixtureSync } from "./local-d1";
 
 const base = process.env.GIRAFFE_E2E ?? "http://127.0.0.1:17045";
 const account = randomUUID().replaceAll("-", "").slice(0, 21);
