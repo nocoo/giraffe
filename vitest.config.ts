@@ -6,6 +6,8 @@ const root = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
 	test: {
+		allowOnly: false,
+		passWithNoTests: false,
 		environment: "node",
 		setupFiles: ["./vitest.setup.ts"],
 		include: ["apps/web/src/**/*.test.ts", "apps/web/src/**/*.test.tsx", "scripts/**/*.test.ts"],
@@ -19,7 +21,7 @@ export default defineConfig({
 				"**/*.test.tsx",
 				"**/__tests__/**",
 				"apps/web/src/client/routes/**/*.tsx",
-				"apps/web/src/client/components/layout/**/*.tsx",
+				"apps/web/src/client/components/**/*.tsx",
 				"apps/web/src/client/main.tsx",
 				"apps/web/src/client/app.tsx",
 			],
