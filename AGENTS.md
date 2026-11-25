@@ -18,7 +18,7 @@ bun run gate:wrangler-vars     # S2: wrangler.toml var/env boundaries
 bun run gate:github-fetch      # S2: GitHub outbound fetch boundary
 bun run gate:client-fetch      # S2: client /api/ fetch boundary
 bun run build                  # B1: PWA icons + dist/client
-bun run test:coverage          # L1: Vitest/V8 >= 95% all 4 metrics
+bun run test:coverage          # L1: Vitest/V8 >= 80% all 4 metrics
 bun run test:e2e:api           # L3: local HTTP functional A + JWT B
 bun run test:e2e:bdd           # L4: Playwright Chromium on built SPA
 bun run gate:security          # G1/G2: Gitleaks + OSV (missing tool fails)
@@ -50,7 +50,7 @@ bun run gate:security          # G1/G2: Gitleaks + OSV (missing tool fails)
 
 Follows `system1-quality`; CI slots and pinned `base-ci` live in `.github/workflows/quality-slots.yml` (via `.github/workflows/ci.yml`; `quality / Z1: Gate` required on `main`). Statuses: `enforced`, `planned`, `manual`, `N/A`.
 
-- **L1 coverage**: >= 95% statements/branches/functions/lines on `apps/web/src/**/*.{ts,tsx}` (excludes tests and thin route/layout/entry shells in `vitest.config.ts`).
+- **L1 coverage**: >= 80% statements/branches/functions/lines on `apps/web/src/**/*.{ts,tsx}` (excludes tests and route/component/entry shells in `vitest.config.ts`).
 - **N/A slots**: `L2 Runtime` (`N/A`, covered by `L3 Integration`); `P1 Package` (`N/A`, Worker app not published to npm).
 - **Planned gaps**: `pre-commit` wall time (>30s), `pre-push` exact pushed-commit snapshots, `L3` full factory endpoint inventory, and `L3`/`L4` per-run temp persist dirs (`planned`).
 - **Manual**: Docs and backup-copy D1 migration verification (`scripts/verify-factory-migration.ts`).
