@@ -13,8 +13,7 @@ bun install --frozen-lockfile  # deps + restore .husky/
 bun run dev                    # Vite 7045 + Worker 37045 (giraffe.dev.hexly.ai; real GitHub)
 bun run dev:server             # API-only Worker on 7045
 bun run typecheck              # S1: 3 TS configs + wrangler types
-bun run lint                   # S2: Biome check-only, 0 warnings
-bun run gate:test-skip         # S2: no skipped/focused tests
+bun run lint                   # S2: Biome check-only (0 warnings) + wrangler/fetch gates
 bun run gate:wrangler-vars     # S2: wrangler.toml var/env boundaries
 bun run gate:github-fetch      # S2: GitHub outbound fetch boundary
 bun run gate:client-fetch      # S2: client /api/ fetch boundary
@@ -55,7 +54,7 @@ Follows `system1-quality`; CI slots and pinned `base-ci` live in `.github/workfl
 - **N/A slots**: `L2 Runtime` (`N/A`, covered by `L3 Integration`); `P1 Package` (`N/A`, Worker app not published to npm).
 - **Planned gaps**: `pre-commit` wall time (>30s), `pre-push` exact pushed-commit snapshots, `L3` full factory endpoint inventory, and `L3`/`L4` per-run temp persist dirs (`planned`).
 - **Manual**: Docs and backup-copy D1 migration verification (`scripts/verify-factory-migration.ts`).
-- **`pre-commit`** (`.husky/`, check-only): runs `typecheck`, `lint`, 4 `gate:*` scripts, and `test:coverage` on a `git checkout-index` snapshot (staged `package.json`/`bun.lock` must match worktree).
+- **`pre-commit`** (`.husky/`, check-only): runs `typecheck`, `lint` (Biome + 3 `gate:*` scripts), and `test:coverage` on a `git checkout-index` snapshot (staged `package.json`/`bun.lock` must match worktree).
 - **`pre-push`** (`.husky/`, check-only): runs `test:e2e:api` (`L3`) and `gate:security` (`G1` Gitleaks on stdin commit ranges + `G2` OSV on `bun.lock`) in parallel; missing scanners fail.
 
 ## Resources & Isolation
