@@ -23,13 +23,20 @@ const inputSchema = z
 	})
 	.strict();
 
+const FORMATTERS = new Map<string, Intl.DateTimeFormat>();
+const MIDNIGHTS = new Map<string, string>();
+
 function formatter(timezone: string) {
-	return new Intl.DateTimeFormat("en-CA", {
+	const cached = FORMATTERS.get(timezone);
+	if (cached) return cached;
+	const created = new Intl.DateTimeFormat("en-CA", {
 		timeZone: timezone,
 		year: "numeric",
 		month: "2-digit",
 		day: "2-digit",
 	});
+	FORMATTERS.set(timezone, created);
+	return created;
 }
 function dateAt(format: Intl.DateTimeFormat, at: number): string {
 	const parts = format.formatToParts(at);
@@ -39,7 +46,10 @@ function dateAt(format: Intl.DateTimeFormat, at: number): string {
 function shift(date: string, days: number) {
 	return new Date(Date.parse(`${date}T00:00:00.000Z`) + days * DAY).toISOString().slice(0, 10);
 }
-function midnight(date: string, format: Intl.DateTimeFormat): string {
+function midnight(date: string, timezone: string, format: Intl.DateTimeFormat): string {
+	const key = `${timezone}\0${date}`;
+	const cached = MIDNIGHTS.get(key);
+	if (cached) return cached;
 	const noon = Date.parse(`${date}T12:00:00.000Z`);
 	let low = noon - 2 * DAY;
 	let high = noon + DAY;
@@ -48,7 +58,9 @@ function midnight(date: string, format: Intl.DateTimeFormat): string {
 		if (dateAt(format, middle) < date) low = middle;
 		else high = middle;
 	}
-	return new Date(high).toISOString();
+	const iso = new Date(high).toISOString();
+	MIDNIGHTS.set(key, iso);
+	return iso;
 }
 export function parseRefreshParams(value: unknown, now = new Date()): RefreshParams {
 	const parsed = inputSchema.safeParse(value);
@@ -99,11 +111,19 @@ export function refreshDays(params: RefreshParams): RefreshDay[] {
 	const format = formatter(params.timezone);
 	const days: RefreshDay[] = [];
 	for (let date = params.since; date <= params.until; date = shift(date, 1)) {
-		days.push({ date, since: midnight(date, format), until: midnight(shift(date, 1), format) });
+		days.push({
+			date,
+			since: midnight(date, params.timezone, format),
+			until: midnight(shift(date, 1), params.timezone, format),
+		});
 	}
 	return days;
 }
 export function calendarDayBounds(date: string, timezone: string): RefreshDay {
 	const format = formatter(timezone);
-	return { date, since: midnight(date, format), until: midnight(shift(date, 1), format) };
+	return {
+		date,
+		since: midnight(date, timezone, format),
+		until: midnight(shift(date, 1), timezone, format),
+	};
 }
