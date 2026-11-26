@@ -1,5 +1,5 @@
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
-import { closeSync, fsyncSync, openSync, writeSync } from "node:fs";
+import { closeSync, existsSync, fsyncSync, openSync, writeSync } from "node:fs";
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { dirname, join } from "node:path";
@@ -327,7 +327,9 @@ process.once("SIGTERM", () => {
 
 try {
 	await mkdir(tmp, { recursive: true });
-	await run(join(root, "node_modules/.bin/vite"), ["build"]);
+	if (process.env.GIRAFFE_SKIP_BUILD !== "1" || !existsSync(join(root, "dist/client/index.html"))) {
+		await run(join(root, "node_modules/.bin/vite"), ["build"]);
+	}
 	const assets = join(tmp, "dist/client");
 	await rm(assets, { recursive: true, force: true });
 	await cp(join(root, "dist/client"), assets, { recursive: true });
