@@ -43,12 +43,12 @@ bun run gate:security          # G1/G2: Gitleaks + OSV (missing tool fails)
 - **Machine resources**: Agent records/reports/jobs are mutable local revisioned resources; GitHub observations and factory publications stay read-only. Contract: [docs/11-agent-api.md](docs/11-agent-api.md).
 - **No bundled analysis**: `/analysis`, analysis projections, model inference/settings, and code-execution routes stay removed; external producers call `/api/v1/*` without model secrets (legacy AI tables untouched).
 - **Strict TDD & contract**: Keep failing tests in the working tree; commits pass current L1; never skip hooks (`--no-verify`). Raise weaker enforcement rather than lowering this contract.
-- **Auto-deploy**: Green `CI` on `main` triggers `.github/workflows/release.yml` (merging a PR deploys); never deploy concurrently from a laptop. Runbook: [release ops](docs/16-release-operations.md).
+- **Auto-deploy**: `.github/workflows/pipeline.yml` runs CI (`quality-slots.yml` -> `quality / Z1: Gate`) and on `main` push (or `workflow_dispatch` with `deploy=true`) runs CD (`D1–D5` via `nocoo/base-ci/.github/workflows/deploy-worker.yml`, consuming `b1-dist` into `dist/client` without rebuilding, applying remote D1 migrations to `giraffe-db`, running `bun run scripts/deploy-worker.ts`, and verifying `/api/live`); never deploy concurrently from a laptop. Runbook: [release ops](docs/16-release-operations.md).
 - **Additive migrations**: Apply additive D1 migrations before dependent code and verify factory migrations on a local backup copy (`scripts/verify-factory-migration.ts`).
 
 ## Quality & Local Gates
 
-Follows `system1-quality`; CI slots and pinned `base-ci` live in `.github/workflows/quality-slots.yml` (via `.github/workflows/ci.yml`; `quality / Z1: Gate` required on `main`). Statuses: `enforced`, `planned`, `manual`, `N/A`.
+Follows `system1-quality`; CI slots and pinned `base-ci` live in `.github/workflows/quality-slots.yml` (via `.github/workflows/pipeline.yml`; `quality / Z1: Gate` required on `main`). Statuses: `enforced`, `planned`, `manual`, `N/A`.
 
 - **L1 coverage**: >= 80% statements/branches/functions/lines on `apps/web/src/**/*.{ts,tsx}` (excludes tests and route/component/entry shells in `vitest.config.ts`).
 - **N/A slots**: `L2 Runtime` (`N/A`, covered by `L3 Integration`). `P1 Package` verifies Worker bundling via `wrangler deploy --dry-run` reusing `B1` (`b1-dist`).
