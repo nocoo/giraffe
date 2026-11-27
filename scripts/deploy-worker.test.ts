@@ -25,7 +25,7 @@ describe("unified refresh deployment", () => {
 		expect(readFileSync("wrangler.toml", "utf8")).toMatch(
 			/\[triggers\]\s+crons = \["0 19 \* \* \*"\]/,
 		);
-		expect(readFileSync(".github/workflows/release.yml", "utf8")).toContain(
+		expect(readFileSync(".github/workflows/pipeline.yml", "utf8")).toContain(
 			'deploy-script: "bun run scripts/deploy-worker.ts"',
 		);
 	});
