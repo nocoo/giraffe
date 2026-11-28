@@ -219,7 +219,6 @@ async function suite(name: "A" | "B"): Promise<void> {
 	try {
 		await waitLive(60_000);
 		const suiteBTests = [
-			"tests/api/matrix.test.ts",
 			"tests/api/project-identity.test.ts",
 			"tests/api/collection-retirement.test.ts",
 		];

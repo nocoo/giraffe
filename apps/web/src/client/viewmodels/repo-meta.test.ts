@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
 import { categoryLabel, loadRepoMeta } from "./repo-meta";
 import { setActiveAccountId } from "./session";

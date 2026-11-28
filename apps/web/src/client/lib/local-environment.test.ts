@@ -1,26 +1,27 @@
-// @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
 
 afterEach(() => {
-	delete window.__GIRAFFE_LOCAL__;
 	vi.resetModules();
 	vi.unstubAllGlobals();
 });
 
-it("keeps hosted requests unchanged and ignores saved preferences", async () => {
-	localStorage.setItem("giraffe:environment", "prod");
+it("keeps hosted requests unchanged when no local runtime global is injected", async () => {
+	vi.stubGlobal("window", {});
 	const environment = await import("./local-environment");
 	expect(environment.getLocalEnvironment()).toBeUndefined();
 	expect(environment.isRemoteReadOnly()).toBe(false);
 });
 
 it("freezes the bootstrapped target and blocks Prod writes before fetch", async () => {
-	window.__GIRAFFE_LOCAL__ = { mode: "prod", instanceId: "prod-one", csrfToken: "csrf" };
+	const win: { __GIRAFFE_LOCAL__?: unknown } = {
+		__GIRAFFE_LOCAL__: { mode: "prod", instanceId: "prod-one", csrfToken: "csrf" },
+	};
+	vi.stubGlobal("window", win);
 	const environment = await import("./local-environment");
 	const { apiGet, apiPost, apiDelete, apiWrite } = await import("./api");
 	const fetcher = vi.fn<typeof fetch>(async () => Response.json({ ok: true }));
 	vi.stubGlobal("fetch", fetcher);
-	window.__GIRAFFE_LOCAL__ = { mode: "local", instanceId: "other", csrfToken: "other" };
+	win.__GIRAFFE_LOCAL__ = { mode: "local", instanceId: "other", csrfToken: "other" };
 	expect(environment.isRemoteReadOnly()).toBe(true);
 	await apiGet("ci?scope=all");
 	expect(fetcher.mock.lastCall).toEqual([
@@ -44,7 +45,9 @@ it("freezes the bootstrapped target and blocks Prod writes before fetch", async 
 });
 
 it("keeps Local writes working with the instance and content type intact", async () => {
-	window.__GIRAFFE_LOCAL__ = { mode: "local", instanceId: "local-one", csrfToken: "csrf" };
+	vi.stubGlobal("window", {
+		__GIRAFFE_LOCAL__: { mode: "local", instanceId: "local-one", csrfToken: "csrf" },
+	});
 	const { apiPost } = await import("./api");
 	const fetcher = vi.fn<typeof fetch>(async () => Response.json({ ok: true }));
 	vi.stubGlobal("fetch", fetcher);

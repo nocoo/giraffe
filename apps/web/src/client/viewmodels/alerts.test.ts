@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadAlerts } from "./alerts";
 import { setActiveAccountId } from "./session";

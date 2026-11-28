@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 import { expect, it } from "vitest";
 import { factoryFixture } from "../../../../../tests/fixtures/factory-snapshot";
 import { emptyDay } from "../../lib/factory";

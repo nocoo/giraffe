@@ -50,7 +50,7 @@ bun run gate:security          # G1/G2: Gitleaks + OSV (missing tool fails)
 
 Follows `system1-quality`; CI slots and pinned `base-ci` live in `.github/workflows/quality-slots.yml` (via `.github/workflows/pipeline.yml`; `quality / Z1: Gate` required on `main`). Statuses: `enforced`, `planned`, `manual`, `N/A`.
 
-- **L1 coverage**: >= 80% statements/branches/functions/lines on `apps/web/src/**/*.{ts,tsx}` (excludes tests and route/component/entry shells in `vitest.config.ts`).
+- **L1 coverage**: >= 90% statements/functions/lines and >= 85% branches on `apps/web/src/**/*.{ts,tsx}` (excludes tests and route/component/entry shells in `vitest.config.ts`).
 - **N/A slots**: `L2 Runtime` (`N/A`, covered by `L3 Integration`). `P1 Package` verifies Worker bundling via `wrangler deploy --dry-run` reusing `B1` (`b1-dist`).
 - **Planned gaps**: `pre-commit` wall time (>30s), `pre-push` exact pushed-commit snapshots, `L3` full factory endpoint inventory, and `L3`/`L4` per-run temp persist dirs (`planned`).
 - **Manual**: Docs and backup-copy D1 migration verification (`scripts/verify-factory-migration.ts`).

@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
 import { agentStatePresentation, loadRepoAgentState } from "./repo-agent-state";
 import { setActiveAccountId } from "./session";

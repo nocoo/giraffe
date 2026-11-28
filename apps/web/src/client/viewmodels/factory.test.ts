@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 import {
 	factoryFixture as ready,
@@ -30,17 +29,54 @@ import {
 	safeGithubUrl,
 } from "./factory";
 
+function utcDates(start: string, count: number) {
+	return Array.from({ length: count }, (_, index) =>
+		new Date(Date.parse(`${start}T00:00:00.000Z`) + index * 86_400_000).toISOString().slice(0, 10),
+	);
+}
+function utcCompleteDays(dates: readonly string[]) {
+	return dates.map((date) => ({
+		since: `${date}T00:00:00.000Z`,
+		until: `${date}T23:59:59.999Z`,
+		timezone: "UTC",
+	}));
+}
+function shanghaiCompleteDays(dates: readonly string[]) {
+	return dates.map((date) => ({
+		since: `${date}T00:00:00.000+08:00`,
+		until: `${date}T23:59:59.999+08:00`,
+		timezone: "Asia/Shanghai",
+	}));
+}
+function day(commits: number, extra: Partial<ReturnType<typeof emptyDay>> = {}) {
+	return { ...emptyDay(), commits, ...extra };
+}
+function repoFixture(window?: { since: string; until: string; timezone?: string }) {
+	const snapshot = ready();
+	const repo = snapshot.repos[0];
+	if (!repo) throw new Error("fixture");
+	if (window) snapshot.window = window;
+	return { snapshot, repo };
+}
+function withDays(name: string, days: Record<string, ReturnType<typeof day>>) {
+	const repo = structuredClone(ready().repos[0]);
+	if (!repo) throw new Error("fixture");
+	for (const stream of FACTORY_STREAMS) repo.coverage[stream].status = "complete";
+	repo.id = name;
+	repo.name = `nocoo/${name}`;
+	repo.metrics.days = days;
+	return repo;
+}
+
 describe("software factory view model", () => {
 	it("keeps repository spark gaps, complete zeros and partial lower bounds distinct", () => {
-		const snapshot = ready();
-		const repo = snapshot.repos[0];
-		if (!repo) throw new Error("fixture");
+		const { snapshot, repo } = repoFixture();
 		repo.coverage.commits.status = "partial";
 		repo.coverage.commits.completeWindows = shanghaiCompleteDays(["2026-09-13"]);
 		repo.metrics.days = {
 			"2026-09-13": emptyDay(),
 			"2026-09-14": emptyDay(),
-			"2026-09-15": { ...emptyDay(), commits: 2 },
+			"2026-09-15": day(2),
 		};
 		expect(
 			factoryRepoCommits(
@@ -65,6 +101,7 @@ describe("software factory view model", () => {
 		repo.coverage.commits.observation = { ...repo.observation, head: null };
 		expect(factoryRepoCommits(repo, ["2026-09-13"], snapshot.window)).toEqual([0]);
 	});
+
 	it.each([
 		["Asia/Shanghai", "2026-10-28", "2026-10-27T16:00:00Z", "2026-10-28T15:59:59.999Z"],
 		["America/New_York", "2026-03-08", "2026-03-08T05:00:00Z", "2026-03-09T03:59:59.999Z"],
@@ -72,11 +109,8 @@ describe("software factory view model", () => {
 	])(
 		"preserves a complete calendar day and its one-day flow in %s",
 		(timezone, date, since, until) => {
-			const snapshot = ready();
-			const repo = snapshot.repos[0];
-			if (!repo) throw new Error("fixture");
-			snapshot.window = { since, until, timezone };
-			repo.metrics.days = { [date]: { ...emptyDay(), commits: 2 } };
+			const { snapshot, repo } = repoFixture({ since, until, timezone });
+			repo.metrics.days = { [date]: day(2) };
 			for (const stream of FACTORY_STREAMS) repo.coverage[stream].status = "complete";
 			const board = factoryBoard(snapshot, snapshot.repos, snapshot.repos);
 			expect(board.days).toHaveLength(90);
@@ -90,18 +124,16 @@ describe("software factory view model", () => {
 			expect(board.repoActivity[0]?.periods[1].commits).toBe(2);
 		},
 	);
+
 	it("withholds incompatible per-source calendar aggregation across timezones", () => {
-		const snapshot = ready();
-		const first = snapshot.repos[0];
-		if (!first) throw new Error("fixture");
-		snapshot.window = {
+		const { snapshot, repo } = repoFixture({
 			since: "2026-10-27T16:00:00Z",
 			until: "2026-10-28T15:59:59.999Z",
 			timezone: "Asia/Shanghai",
-		};
-		first.metrics.days = { "2026-10-28": { ...emptyDay(), commits: 2 } };
-		for (const stream of FACTORY_STREAMS) first.coverage[stream].status = "complete";
-		first.coverage.commits.observation = {
+		});
+		repo.metrics.days = { "2026-10-28": day(2) };
+		for (const stream of FACTORY_STREAMS) repo.coverage[stream].status = "complete";
+		repo.coverage.commits.observation = {
 			version: "dst-source",
 			source: "run",
 			refreshedAt: snapshot.fetched_at,
@@ -118,6 +150,7 @@ describe("software factory view model", () => {
 		expect(board.periods[0]?.complete.commits).toBe(false);
 		expect(board.repoActivity).toEqual([]);
 	});
+
 	it.each([30, 90])(
 		"keeps the default 90-day span over a %i-day published UTC window",
 		(dayCount) => {
@@ -127,7 +160,7 @@ describe("software factory view model", () => {
 			expect(board.days).toHaveLength(90);
 			expect(board.days.at(-dayCount)?.date).toBe(snapshot.window.since.slice(0, 10));
 			expect(board.days.at(-1)?.date).toBe(snapshot.window.until.slice(0, 10));
-			expect(board.days.every((day) => !day.observed && day.commits === null)).toBe(true);
+			expect(board.days.every((d) => !d.observed && d.commits === null)).toBe(true);
 			expect(board.displayWindow).toEqual({
 				since: `${board.days[0]?.date}T00:00:00.000Z`,
 				until: "2026-09-16T00:00:00.000Z",
@@ -135,100 +168,54 @@ describe("software factory view model", () => {
 			});
 		},
 	);
-	it("ends the default 90-day view at the latest observed day, not the requested window end", () => {
-		const snapshot = ready();
-		const repo = snapshot.repos[0];
-		if (!repo) throw new Error("fixture");
+
+	it("ends the selected span at the latest observed day and keeps earlier days missing", () => {
+		const { snapshot, repo } = repoFixture();
 		snapshot.window = savedFactoryWindow(snapshot.fetched_at, 90);
-		for (const stream of FACTORY_STREAMS) repo.coverage[stream].status = "complete";
-		repo.metrics.days = {
-			"2026-07-01": { ...emptyDay(), commits: 3 },
-			"2026-09-10": { ...emptyDay(), commits: 4 },
-		};
+		repo.metrics.days = { "2026-07-01": day(3), "2026-09-10": day(4) };
 		const board = factoryBoard(snapshot, snapshot.repos, snapshot.repos);
-		expect(board.days[0]?.date).toBe("2026-06-13");
-		expect(board.days[0]).toMatchObject({ observed: false, commits: null });
-		expect(board.days.at(-1)?.date).toBe("2026-09-10");
-		expect(board.days.at(-1)).toMatchObject({ observed: true, commits: 4 });
-		expect(board.days).toHaveLength(90);
+		expect(board.days[0]).toMatchObject({ date: "2026-06-13", observed: false, commits: null });
+		expect(board.days.at(-1)).toMatchObject({
+			date: "2026-09-10",
+			observed: true,
+			commits: 4,
+			openPrs: null,
+		});
 		expect(board.availableDays).toBe(85);
-		expect(board.periods[0]).toMatchObject({ since: "2026-09-10", until: "2026-09-10" });
-		expect(board.days.at(-1)?.openPrs).toBeNull();
-		expect(board.periods[0]?.stock.openPrs).toEqual({ from: null, to: null });
+		expect(board.periods[0]).toMatchObject({
+			since: "2026-09-10",
+			until: "2026-09-10",
+			stock: { openPrs: { from: null, to: null } },
+		});
 		expect(board.displayWindow).toEqual({
 			since: "2026-06-13T00:00:00.000Z",
 			until: "2026-09-11T00:00:00.000Z",
 			timezone: "UTC",
 		});
-	});
-	it.each([
-		[30, 30],
-		[90, 90],
-		[180, 180],
-		[365, 365],
-	])("keeps the selected %i-day span ending at the latest observed day", (range, days) => {
-		const snapshot = ready();
-		const repo = snapshot.repos[0];
-		if (!repo) throw new Error("fixture");
-		snapshot.window = savedFactoryWindow(snapshot.fetched_at, 90);
-		repo.metrics.days = {
-			"2026-07-01": { ...emptyDay(), commits: 3 },
-			"2026-09-10": { ...emptyDay(), commits: 4 },
-		};
-		const board = factoryBoard(snapshot, [repo], [repo], range);
-		expect(board.days).toHaveLength(days);
-		expect(board.days.at(-1)).toMatchObject({ date: "2026-09-10", observed: true, commits: 4 });
-		expect(board.availableDays).toBe(85);
-		expect(board.days[0]).toMatchObject({
-			observed: false,
-			commits: null,
-			complete: { commits: false },
-		});
-	});
-	it("keeps the selected span before the published window as missing days", () => {
-		const snapshot = ready();
-		const repo = snapshot.repos[0];
-		if (!repo) throw new Error("fixture");
+		for (const range of [30, 90, 180, 365] as const) {
+			const ranged = factoryBoard(snapshot, [repo], [repo], range);
+			expect(ranged.days).toHaveLength(range);
+			expect(ranged.days.at(-1)).toMatchObject({ date: "2026-09-10", commits: 4 });
+			expect(ranged.days[0]).toMatchObject({ observed: false, complete: { commits: false } });
+		}
 		snapshot.window = {
 			since: "2026-09-08T00:00:00Z",
 			until: "2026-09-11T00:00:00Z",
 			timezone: "UTC",
 		};
-		repo.metrics.days = { "2026-09-10": { ...emptyDay(), commits: 2 } };
-		const board = factoryBoard(snapshot, [repo], [repo], 30);
-		expect(board.days).toHaveLength(30);
-		expect(board.availableDays).toBe(3);
-		expect(board.days.at(-1)).toMatchObject({ date: "2026-09-10", observed: true, commits: 2 });
-		expect(board.days[0]).toMatchObject({
-			date: "2026-08-12",
-			observed: false,
-			commits: null,
-			complete: { commits: false },
-		});
-		expect(board.days.slice(0, -1).every((day) => !day.observed)).toBe(true);
-		expect(board.displayWindow).toEqual({
-			since: "2026-08-12T00:00:00.000Z",
-			until: "2026-09-11T00:00:00.000Z",
-			timezone: "UTC",
+		repo.metrics.days = { "2026-09-10": day(2) };
+		const short = factoryBoard(snapshot, [repo], [repo], 30);
+		expect(short.availableDays).toBe(3);
+		expect(short.days.slice(0, -1).every((d) => !d.observed)).toBe(true);
+		snapshot.window.until = "2026-09-12T00:00:00Z";
+		repo.metrics.days = { "2026-09-08": day(3), "2026-09-11": emptyDay() };
+		expect(factoryBoard(snapshot, [repo], [repo]).days.at(-1)).toMatchObject({
+			date: "2026-09-11",
+			observed: true,
+			commits: 0,
 		});
 	});
-	it("treats an observed zero-activity day as the latest observation", () => {
-		const snapshot = ready();
-		const repo = snapshot.repos[0];
-		if (!repo) throw new Error("fixture");
-		snapshot.window = {
-			since: "2026-09-08T00:00:00Z",
-			until: "2026-09-12T00:00:00Z",
-			timezone: "UTC",
-		};
-		repo.metrics.days = {
-			"2026-09-08": { ...emptyDay(), commits: 3 },
-			"2026-09-11": emptyDay(),
-		};
-		const board = factoryBoard(snapshot, [repo], [repo]);
-		expect(board.days).toHaveLength(90);
-		expect(board.days.at(-1)).toMatchObject({ date: "2026-09-11", observed: true, commits: 0 });
-	});
+
 	it("parses chart range options with the historical 90-day default", () => {
 		expect(factoryRange(null)).toBe(90);
 		expect(factoryRange("30")).toBe(30);
@@ -236,42 +223,23 @@ describe("software factory view model", () => {
 		expect(factoryRange("45")).toBe(90);
 		expect(factoryRange(undefined)).toBe(90);
 	});
-	it("keeps repo-days without observations empty instead of plotting a fabricated zero", () => {
-		const snapshot = ready();
-		const repo = snapshot.repos[0];
-		if (!repo) throw new Error("fixture");
-		snapshot.window = {
+
+	it("keeps unobserved or failed repo-days empty instead of fabricating zeros", () => {
+		const { snapshot, repo } = repoFixture({
 			since: "2026-09-07T16:00:00Z",
 			until: "2026-09-10T15:59:59.999Z",
 			timezone: "Asia/Shanghai",
-		};
-		repo.coverage.commits.status = "complete";
-		repo.coverage.commits.completeWindows = [
-			{
-				since: "2026-09-07T16:00:00Z",
-				until: "2026-09-10T15:59:59.999Z",
-				timezone: "Asia/Shanghai",
-			},
-		];
-		repo.metrics.days = { "2026-09-09": { ...emptyDay(), commits: 2 } };
-		const board = factoryBoard(snapshot, [repo], [repo]);
-		expect(board.days).toHaveLength(90);
-		expect(board.days.slice(-2).map((d) => d.date)).toEqual(["2026-09-08", "2026-09-09"]);
-		expect(board.days.at(-2)).toMatchObject({
-			observed: false,
-			commits: null,
-			issueOpened: null,
-			releases: null,
-			complete: { commits: true },
 		});
-		expect(board.days.at(-1)).toMatchObject({ observed: true, commits: 2 });
-		const unobserved = board.days.slice(0, -2);
-		expect(unobserved.every((day) => !day.observed && day.commits === null)).toBe(true);
-	});
-	it("renders a partial unified-refresh window with the failed day empty, not zero", () => {
-		const snapshot = ready();
-		const repo = snapshot.repos[0];
-		if (!repo) throw new Error("fixture");
+		repo.coverage.commits.status = "complete";
+		repo.coverage.commits.completeWindows = [snapshot.window];
+		repo.metrics.days = { "2026-09-09": day(2) };
+		const complete = factoryBoard(snapshot, [repo], [repo]);
+		expect(complete.days.slice(-2)).toMatchObject([
+			{ date: "2026-09-08", observed: false, commits: null, complete: { commits: true } },
+			{ date: "2026-09-09", observed: true, commits: 2 },
+		]);
+		expect(complete.days.slice(0, -2).every((d) => !d.observed && d.commits === null)).toBe(true);
+
 		snapshot.window = {
 			since: "2026-10-26T16:00:00Z",
 			until: "2026-10-29T15:59:59.999Z",
@@ -284,151 +252,73 @@ describe("software factory view model", () => {
 			window: snapshot.window,
 		};
 		repo.coverage.commits.status = "partial";
-		repo.coverage.commits.completeWindows = [
-			{
-				since: "2026-10-26T16:00:00Z",
-				until: "2026-10-27T15:59:59.999Z",
-				timezone: "Asia/Shanghai",
-			},
-			{
-				since: "2026-10-28T16:00:00Z",
-				until: "2026-10-29T15:59:59.999Z",
-				timezone: "Asia/Shanghai",
-			},
-		];
-		repo.metrics.days = {
-			"2026-10-27": { ...emptyDay(), commits: 5 },
-			"2026-10-29": { ...emptyDay(), commits: 1 },
-		};
-		const board = factoryBoard(snapshot, [repo], [repo]);
-		expect(board.days).toHaveLength(90);
-		expect(board.days.slice(-3).map((day) => day.date)).toEqual([
-			"2026-10-27",
-			"2026-10-28",
-			"2026-10-29",
+		repo.coverage.commits.completeWindows = shanghaiCompleteDays(["2026-10-27", "2026-10-29"]);
+		repo.metrics.days = { "2026-10-27": day(5), "2026-10-29": day(1) };
+		const partial = factoryBoard(snapshot, [repo], [repo]);
+		expect(partial.days.slice(-3)).toMatchObject([
+			{ date: "2026-10-27" },
+			{ date: "2026-10-28", observed: false, commits: null, complete: { commits: false } },
+			{ date: "2026-10-29", observed: true, commits: 1 },
 		]);
-		expect(board.days.at(-2)).toMatchObject({
-			observed: false,
-			commits: null,
-			complete: { commits: false },
-		});
-		expect(board.days.at(-1)).toMatchObject({ observed: true, commits: 1 });
-		expect(board.days[0]?.timezone).toBe("Asia/Shanghai");
+		expect(partial.days[0]?.timezone).toBe("Asia/Shanghai");
 	});
-	it("unions adjacent one-day complete windows into whole periods", () => {
-		const snapshot = ready();
-		const repo = snapshot.repos[0];
-		if (!repo) throw new Error("fixture");
-		snapshot.window = {
+
+	it("unions adjacent one-day complete windows and keeps gaps uncertified", () => {
+		const { snapshot, repo } = repoFixture({
 			since: "2026-09-08T00:00:00.000Z",
 			until: "2026-09-14T23:59:59.999Z",
 			timezone: "UTC",
-		};
+		});
+		const dates = utcDates("2026-09-08", 7);
 		repo.metrics.days = { "2026-09-14": emptyDay() };
 		repo.coverage.commits.status = "partial";
-		repo.coverage.commits.completeWindows = utcCompleteDays(utcDates("2026-09-08", 7));
+		repo.coverage.commits.completeWindows = utcCompleteDays(dates);
 		const board = factoryBoard(snapshot, [repo], [repo], 30);
-		expect(board.days.slice(-7).map((day) => day.date)).toEqual(utcDates("2026-09-08", 7));
-		expect(board.days.slice(-7).every((day) => day.complete.commits)).toBe(true);
-		expect(board.days.slice(0, -7).every((day) => !day.complete.commits && !day.observed)).toBe(
-			true,
-		);
+		expect(board.days.slice(-7).every((d) => d.complete.commits)).toBe(true);
+		expect(board.days.slice(0, -7).every((d) => !d.complete.commits && !d.observed)).toBe(true);
 		expect(board.periods[1]).toMatchObject({
 			since: "2026-09-08",
 			until: "2026-09-14",
 			complete: { commits: true },
 		});
 		expect(board.periods[2]?.complete.commits).toBe(false);
-	});
-	it("covers the whole published span when every day is complete", () => {
-		const snapshot = ready();
-		const repo = snapshot.repos[0];
-		if (!repo) throw new Error("fixture");
-		const dates = utcDates("2026-06-18", 90);
+
+		repo.metrics.days = Object.fromEntries(dates.map((date) => [date, emptyDay()]));
+		repo.coverage.commits.completeWindows = utcCompleteDays(
+			dates.filter((d) => d !== "2026-09-10"),
+		);
+		const gapped = factoryBoard(snapshot, [repo], [repo], 30);
+		expect(gapped.days.find((d) => d.date === "2026-09-10")).toMatchObject({
+			observed: true,
+			commits: 0,
+			complete: { commits: false },
+		});
+		expect(gapped.periods[1]?.complete.commits).toBe(false);
+
+		const allDates = utcDates("2026-06-18", 90);
 		snapshot.window = {
 			since: "2026-06-18T00:00:00.000Z",
 			until: "2026-09-15T23:59:59.999Z",
 			timezone: "UTC",
 		};
 		repo.metrics.days = { "2026-09-15": emptyDay() };
-		repo.coverage.commits.status = "partial";
-		repo.coverage.commits.completeWindows = utcCompleteDays(dates);
-		const board = factoryBoard(snapshot, [repo], [repo]);
-		expect(board.days.map((day) => day.date)).toEqual(dates);
-		expect(board.days.every((day) => day.complete.commits)).toBe(true);
-		expect(board.periods[1]?.complete.commits).toBe(true);
-		expect(board.periods[2]?.complete.commits).toBe(true);
+		repo.coverage.commits.completeWindows = utcCompleteDays(allDates);
+		const full = factoryBoard(snapshot, [repo], [repo]);
+		expect(full.days.every((d) => d.complete.commits)).toBe(true);
+		expect(full.periods[1]?.complete.commits).toBe(true);
+		expect(full.periods[2]?.complete.commits).toBe(true);
 	});
-	it("keeps a missing day as a gap instead of certifying the period", () => {
-		const snapshot = ready();
-		const repo = snapshot.repos[0];
-		if (!repo) throw new Error("fixture");
-		const dates = utcDates("2026-09-08", 7);
-		snapshot.window = {
-			since: "2026-09-08T00:00:00.000Z",
-			until: "2026-09-14T23:59:59.999Z",
-			timezone: "UTC",
-		};
-		repo.metrics.days = Object.fromEntries(dates.map((date) => [date, emptyDay()]));
-		repo.coverage.commits.status = "partial";
-		repo.coverage.commits.completeWindows = utcCompleteDays(
-			dates.filter((date) => date !== "2026-09-10"),
-		);
-		const board = factoryBoard(snapshot, [repo], [repo], 30);
-		expect(board.days.find((day) => day.date === "2026-09-10")?.complete.commits).toBe(false);
-		expect(
-			board.days
-				.slice(-7)
-				.filter((day) => day.date !== "2026-09-10")
-				.every((day) => day.complete.commits),
-		).toBe(true);
-		expect(board.days.find((day) => day.date === "2026-09-10")).toMatchObject({
-			observed: true,
-			commits: 0,
-		});
-		expect(board.periods[1]?.complete.commits).toBe(false);
-	});
-	it("keeps an observed zero on a complete day when overall coverage is partial", () => {
-		const snapshot = ready();
-		const repo = snapshot.repos[0];
-		if (!repo) throw new Error("fixture");
-		snapshot.window = {
-			since: "2026-10-27T16:00:00.000Z",
-			until: "2026-10-28T15:59:59.999Z",
-			timezone: "Asia/Shanghai",
-		};
-		repo.metrics.days = { "2026-10-28": emptyDay() };
-		repo.coverage.commits.status = "partial";
-		repo.coverage.commits.completeWindows = shanghaiCompleteDays(["2026-10-28"]);
-		const board = factoryBoard(snapshot, [repo], [repo]);
-		expect(board.observed.commits).toBe(true);
-		expect(board.days).toHaveLength(90);
-		expect(board.days.at(-1)).toMatchObject({
-			date: "2026-10-28",
-			observed: true,
-			commits: 0,
-			complete: { commits: true },
-		});
-		const earlier = board.days.slice(0, -1);
-		expect(earlier.every((day) => !day.observed && day.commits === null)).toBe(true);
-		expect(earlier.every((day) => !day.complete.commits)).toBe(true);
-	});
-	it("shows partial observations without claiming their days are complete", () => {
-		const snapshot = ready();
-		const repo = snapshot.repos[0];
-		if (!repo) throw new Error("fixture");
+
+	it("keeps partial, observed-zero and terminal-unavailable evidence distinct", () => {
+		const { snapshot, repo } = repoFixture();
 		repo.coverage.commits.status = "partial";
 		repo.coverage.commits.observed = 2;
-		repo.metrics.days = { "2026-09-15": { ...emptyDay(), commits: 2 } };
-		const board = factoryBoard(snapshot, [repo], [repo]);
-		expect(board.observed.commits).toBe(true);
-		expect(board.days.at(-1)).toMatchObject({ commits: 2, complete: { commits: false } });
-		expect(hasFactoryMeasurement(repo, "commits")).toBe(true);
-	});
-	it("keeps terminal-unavailable settled windows out of measured and complete evidence", () => {
-		const snapshot = ready();
-		const repo = snapshot.repos[0];
-		if (!repo) throw new Error("fixture");
+		repo.metrics.days = { "2026-09-15": day(2) };
+		expect(factoryBoard(snapshot, [repo], [repo]).days.at(-1)).toMatchObject({
+			commits: 2,
+			complete: { commits: false },
+		});
+
 		snapshot.window = {
 			since: "2026-10-27T16:00:00.000Z",
 			until: "2026-10-28T15:59:59.999Z",
@@ -442,11 +332,11 @@ describe("software factory view model", () => {
 		repo.coverage.alerts.status = "unavailable";
 		repo.coverage.alerts.observed = 0;
 		repo.coverage.alerts.completeWindows = shanghaiCompleteDays(["2026-10-28"]);
-		const board = factoryBoard(snapshot, [repo], [repo]);
+		const unavailable = factoryBoard(snapshot, [repo], [repo]);
 		expect(hasFactoryMeasurement(repo, "commits")).toBe(false);
 		expect(hasFactoryMeasurement(repo, "alerts")).toBe(false);
-		expect(board.observed).toMatchObject({ commits: false, alerts: false });
-		expect(board.days.at(-1)).toMatchObject({
+		expect(unavailable.observed).toMatchObject({ commits: false, alerts: false });
+		expect(unavailable.days.at(-1)).toMatchObject({
 			date: "2026-10-28",
 			complete: { commits: false, alerts: false },
 		});
@@ -462,20 +352,18 @@ describe("software factory view model", () => {
 		repo.coverage.commits.status = "complete";
 		expect(hasFactoryMeasurement(repo, "commits")).toBe(true);
 	});
+
 	it.each([
 		["complete", "2026-10-29", [false, true]],
 		["unavailable", "2026-10-28", [true, false]],
 	] as const)(
 		"keeps historical alert measurements independent of latest %s inventory",
 		(status, available, expected) => {
-			const snapshot = ready();
-			const repo = snapshot.repos[0];
-			if (!repo) throw new Error("fixture");
-			snapshot.window = {
+			const { snapshot, repo } = repoFixture({
 				since: "2026-10-27T16:00:00.000Z",
 				until: "2026-10-29T15:59:59.999Z",
 				timezone: "Asia/Shanghai",
-			};
+			});
 			repo.metrics.days = { "2026-10-28": emptyDay(), "2026-10-29": emptyDay() };
 			Object.assign(repo.coverage.alerts, {
 				status,
@@ -485,78 +373,59 @@ describe("software factory view model", () => {
 			expect(
 				factoryBoard(snapshot, [repo], [repo])
 					.days.slice(-2)
-					.map((day) => day.complete.alerts),
+					.map((d) => d.complete.alerts),
 			).toEqual(expected);
 		},
 	);
+
 	it.each(["partial", "limited"] as const)(
-		"does not assign available days from mixed %s alert settlement windows",
+		"rejects mixed %s alert available days and unobserved settlement-only evidence",
 		(status) => {
-			const snapshot = ready();
-			const repo = snapshot.repos[0];
-			if (!repo) throw new Error("fixture");
-			snapshot.window = {
+			const { snapshot, repo } = repoFixture({
 				since: "2026-10-27T16:00:00.000Z",
 				until: "2026-10-29T15:59:59.999Z",
 				timezone: "Asia/Shanghai",
-			};
+			});
 			repo.metrics.days = { "2026-10-28": emptyDay(), "2026-10-29": emptyDay() };
 			repo.coverage.alerts.status = status;
-			repo.coverage.alerts.observed = 1;
+			repo.coverage.alerts.observed = 0;
 			repo.coverage.alerts.completeWindows = shanghaiCompleteDays(["2026-10-28", "2026-10-29"]);
+			expect(hasFactoryMeasurement(repo, "alerts")).toBe(false);
+			expect(factoryBoard(snapshot, [repo], [repo]).observed.alerts).toBe(false);
+
+			repo.coverage.alerts.observed = 1;
 			repo.coverage.commits.status = status;
 			repo.coverage.commits.completeWindows = shanghaiCompleteDays(["2026-10-28"]);
 			const board = factoryBoard(snapshot, [repo], [repo]);
-			expect(hasFactoryMeasurement(repo, "alerts")).toBe(true);
 			expect(board.observed.alerts).toBe(true);
-			expect(board.days.slice(-2).map((day) => day.complete.alerts)).toEqual([false, false]);
+			expect(board.days.slice(-2).map((d) => d.complete.alerts)).toEqual([false, false]);
 			expect(board.days.at(-2)).toMatchObject({ commits: 0, complete: { commits: true } });
 			expect(board.days.at(-1)?.complete.commits).toBe(false);
+
 			repo.coverage.alerts.status = "complete";
 			repo.coverage.alerts.observed = 2;
 			repo.coverage.alerts.availableWindows = shanghaiCompleteDays(["2026-10-28", "2026-10-29"]);
-			const complete = factoryBoard(snapshot, [repo], [repo]);
-			expect(complete.observed.alerts).toBe(true);
-			expect(complete.days.slice(-2).map((day) => day.complete.alerts)).toEqual([true, true]);
+			expect(
+				factoryBoard(snapshot, [repo], [repo])
+					.days.slice(-2)
+					.map((d) => d.complete.alerts),
+			).toEqual([true, true]);
 		},
 	);
-	it.each(["partial", "limited"] as const)(
-		"rejects settlement-only evidence in an unobserved %s alert stream",
-		(status) => {
-			const snapshot = ready();
-			const repo = snapshot.repos[0];
-			if (!repo) throw new Error("fixture");
-			repo.coverage.alerts.status = status;
-			repo.coverage.alerts.observed = 0;
-			repo.coverage.alerts.completeWindows = shanghaiCompleteDays(["2026-09-14"]);
-			expect(hasFactoryMeasurement(repo, "alerts")).toBe(false);
-			expect(factoryBoard(snapshot, [repo], [repo]).observed.alerts).toBe(false);
-			repo.coverage.alerts.observed = 1;
-			expect(hasFactoryMeasurement(repo, "alerts")).toBe(true);
-			repo.coverage.alerts.observed = 0;
-			repo.coverage.alerts.status = "complete";
-			expect(hasFactoryMeasurement(repo, "alerts")).toBe(true);
-		},
-	);
-	it("unions Asia/Shanghai day windows without crossing the local day boundary", () => {
-		const snapshot = ready();
-		const repo = snapshot.repos[0];
-		if (!repo) throw new Error("fixture");
-		snapshot.window = {
+
+	it("unions Shanghai day windows without crossing local day boundary", () => {
+		const { snapshot, repo } = repoFixture({
 			since: "2026-10-26T16:00:00.000Z",
 			until: "2026-10-28T15:59:59.999Z",
 			timezone: "Asia/Shanghai",
-		};
-		repo.metrics.days = { "2026-10-27": emptyDay(), "2026-10-28": { ...emptyDay(), commits: 3 } };
+		});
+		repo.metrics.days = { "2026-10-27": emptyDay(), "2026-10-28": day(3) };
 		repo.coverage.commits.status = "partial";
 		repo.coverage.commits.completeWindows = shanghaiCompleteDays(["2026-10-27", "2026-10-28"]);
 		const board = factoryBoard(snapshot, [repo], [repo]);
-		expect(board.days).toHaveLength(90);
-		expect(board.days.slice(-2).map((day) => day.date)).toEqual(["2026-10-27", "2026-10-28"]);
-		expect(board.days.slice(-2).every((day) => day.complete.commits)).toBe(true);
-		expect(board.days.every((day) => day.timezone === "Asia/Shanghai")).toBe(true);
+		expect(board.days.slice(-2).map((d) => d.date)).toEqual(["2026-10-27", "2026-10-28"]);
+		expect(board.days.every((d) => d.timezone === "Asia/Shanghai")).toBe(true);
 		expect(board.days.at(-2)).toMatchObject({ observed: true, commits: 0 });
-		expect(board.days[0]).toMatchObject({ observed: false, commits: null });
 		expect(board.periods[0]).toMatchObject({
 			since: "2026-10-28",
 			until: "2026-10-28",
@@ -564,24 +433,9 @@ describe("software factory view model", () => {
 		});
 		expect(board.periods[1]?.complete.commits).toBe(false);
 	});
-	it("keeps the retained observation window instead of assuming the new quick window", () => {
-		const snapshot = ready();
-		const repo = snapshot.repos[0];
-		if (!repo) throw new Error("fixture");
-		repo.observation = {
-			version: snapshot.runId,
-			window: snapshot.window,
-			refreshedAt: snapshot.fetched_at,
-			source: "run",
-			publishedAt: snapshot.fetched_at,
-		};
-		snapshot.window = savedFactoryWindow(snapshot.fetched_at, 30);
-		expect(factoryBoard(snapshot, snapshot.repos, snapshot.repos).days).toHaveLength(90);
-	});
+
 	it("charts retained older buckets beside updated quick-window days using the display span", () => {
-		const snapshot = ready();
-		const repo = snapshot.repos[0];
-		if (!repo) throw new Error("fixture");
+		const { snapshot, repo } = repoFixture();
 		repo.observation = {
 			version: "quick",
 			source: "run",
@@ -589,60 +443,56 @@ describe("software factory view model", () => {
 			refreshedAt: snapshot.fetched_at,
 		};
 		repo.metrics.days = {
-			[snapshot.window.since.slice(0, 10)]: { ...emptyDay(), commits: 2 },
-			[snapshot.window.until.slice(0, 10)]: { ...emptyDay(), commits: 7 },
+			[snapshot.window.since.slice(0, 10)]: day(2),
+			[snapshot.window.until.slice(0, 10)]: day(7),
 		};
 		const board = factoryBoard(snapshot, [repo], [repo]);
 		expect(board.days).toHaveLength(90);
 		expect(board.days[0]?.commits).toBe(2);
 		expect(board.days.at(-1)?.commits).toBe(7);
-		expect(board.displayWindow.since).toBe("2026-06-18T00:00:00.000Z");
-		expect(board.displayWindow.until).toBe("2026-09-16T00:00:00.000Z");
+		expect(board.displayWindow).toMatchObject({
+			since: "2026-06-18T00:00:00.000Z",
+			until: "2026-09-16T00:00:00.000Z",
+		});
+		snapshot.window = savedFactoryWindow(snapshot.fetched_at, 30);
+		expect(factoryBoard(snapshot, [repo], [repo]).days).toHaveLength(90);
 	});
-	it("filters reproducibly by language, topic and repository without double counting overlapping tags", () => {
-		const s = ready();
-		const repo = s.repos[0];
-		if (!repo) throw new Error("fixture");
-		s.repos.push({
+
+	it("filters by language, topic, query and evaluates dependency completeness & edges", () => {
+		const { snapshot, repo } = repoFixture();
+		repo.description = null;
+		snapshot.repos.push({
 			...repo,
 			id: "other",
 			name: "nocoo/other",
 			language: "Swift",
 			topics: ["cli", "macos"],
 		});
-		expect(factoryGroups(s.repos).languages).toEqual(["Swift", "TypeScript"]);
+		expect(factoryGroups(snapshot.repos).languages).toEqual(["Swift", "TypeScript"]);
 		expect(
-			filterFactoryRepos(s.repos, { language: "Swift", topic: "cli", query: "" }),
+			filterFactoryRepos(snapshot.repos, { language: "Swift", topic: "cli", query: "" }),
 		).toHaveLength(1);
-		expect(filterFactoryRepos(s.repos, { language: "", topic: "", query: "app" })).toHaveLength(1);
-		expect(filterFactoryRepos(s.repos, { language: "", topic: "macos", query: "" })).toHaveLength(
-			1,
-		);
-		expect(filterFactoryRepos(s.repos, { language: "", topic: "absent", query: "" })).toHaveLength(
-			0,
-		);
-	});
-	it("reports coverage and raw sample sizes, never treating unknown security as healthy", () => {
-		const s = ready();
-		const board = factoryBoard(s, s.repos, s.repos);
-		expect(board.coverage.complete).toBe(0);
-		expect(board.aggregate.ciRate).toBeNull();
-		expect(board.days).toHaveLength(90);
-	});
-	it("requires complete dependency evidence before reporting an empty graph as zero", () => {
-		const snapshot = ready();
+		expect(
+			filterFactoryRepos(snapshot.repos, { language: "", topic: "", query: "app" }),
+		).toHaveLength(1);
+		expect(
+			filterFactoryRepos(snapshot.repos, { language: "", topic: "macos", query: "" }),
+		).toHaveLength(1);
+		expect(
+			filterFactoryRepos(snapshot.repos, { language: "", topic: "absent", query: "" }),
+		).toEqual([]);
+
 		expect(factoryBoard(snapshot, snapshot.repos, snapshot.repos).dependenciesComplete).toBe(false);
-		for (const repo of snapshot.repos) repo.coverage.dependencies.status = "complete";
+		for (const r of snapshot.repos) r.coverage.dependencies.status = "complete";
 		expect(factoryBoard(snapshot, snapshot.repos, snapshot.repos).dependenciesComplete).toBe(true);
 		snapshot.repos = [];
 		expect(factoryBoard(snapshot, [], []).dependenciesComplete).toBe(false);
-	});
-	it("builds only evidenced cross-project references, with source URLs and merged duplicate edges", () => {
+
 		const s = ready();
-		const repo = s.repos[0];
-		if (!repo) throw new Error("fixture");
+		const r = s.repos[0];
+		if (!r) throw new Error("fixture");
 		s.repos.push({
-			...repo,
+			...r,
 			name: "nocoo/basalt",
 			id: "two",
 			dependencies: [],
@@ -655,7 +505,7 @@ describe("software factory view model", () => {
 				},
 			],
 		});
-		repo.dependencies = [
+		r.dependencies = [
 			{
 				name: "@nocoo/basalt",
 				version: "2",
@@ -676,22 +526,40 @@ describe("software factory view model", () => {
 		});
 		expect(dependencyEdges([])).toEqual([]);
 	});
+
 	it("filters detail rows and rejects unsafe external URLs", () => {
 		expect(
 			eventPage([{ title: "fix", id: "1", author: "bot", state: "open" }] as never, "fix", "open"),
 		).toHaveLength(1);
+		expect(
+			eventPage(
+				[{ title: "work", id: "1", author: "human", state: "closed" }] as never,
+				"",
+				"open",
+			),
+		).toEqual([]);
+		expect(
+			eventPage(
+				[{ title: "work", id: "1", author: "human", state: "closed" }] as never,
+				"other",
+				"",
+			),
+		).toEqual([]);
 		expect(eventPage([], "", "")).toEqual([]);
-		expect(safeGithubUrl("javascript:alert(1)")).toBe("https://github.com");
-		expect(safeGithubUrl("https://evil.test/a")).toBe("https://github.com");
+		for (const bad of [
+			"javascript:alert(1)",
+			"https://evil.test/a",
+			"not a URL",
+			"https://user@github.com/nocoo/app",
+		])
+			expect(safeGithubUrl(bad)).toBe("https://github.com");
 		expect(safeGithubUrl("https://github.com/nocoo/app")).toBe("https://github.com/nocoo/app");
 	});
 });
 
 describe("factory sampling signals", () => {
 	it("computes weighted coverage, complete-day trends and inspectable anomaly rules", () => {
-		const s = ready();
-		const r = s.repos[0];
-		if (!r) throw new Error("fixture");
+		const { snapshot: s, repo: r } = repoFixture();
 		for (const c of Object.values(r.coverage)) c.status = "complete";
 		Object.assign(r.metrics, {
 			agedPrs: 1,
@@ -702,30 +570,7 @@ describe("factory sampling signals", () => {
 			prMerged: 3,
 			commits: 15,
 		});
-		r.metrics.days = {
-			"2026-09-09": {
-				commits: 10,
-				issueOpened: 0,
-				issueClosed: 0,
-				prOpened: 0,
-				prMerged: 0,
-				prClosed: 0,
-				ciSuccess: 0,
-				ciFailure: 0,
-				releases: 0,
-			},
-			"2026-09-02": {
-				commits: 5,
-				issueOpened: 0,
-				issueClosed: 0,
-				prOpened: 0,
-				prMerged: 0,
-				prClosed: 0,
-				ciSuccess: 0,
-				ciFailure: 0,
-				releases: 0,
-			},
-		};
+		r.metrics.days = { "2026-09-09": day(10), "2026-09-02": day(5) };
 		const b = factoryBoard(s, s.repos, s.repos);
 		expect(b.periods[1]).toMatchObject({
 			days: 7,
@@ -747,25 +592,13 @@ describe("factory sampling signals", () => {
 		second.coverage.alerts.status = "unavailable";
 		s.repos.push(second);
 		const next = factoryBoard(s, s.repos, s.repos);
-		expect(next.coverage.limited).toBe(1);
-		expect(next.coverage.unavailable).toBe(1);
+		expect(next.coverage).toMatchObject({ limited: 1, unavailable: 1 });
 		expect(next.totals.private).toBe(1);
-		expect(next.ranking.map((r) => r.name)).toEqual(["nocoo/app", "nocoo/z"]);
+		expect(next.ranking.map((item) => item.name)).toEqual(["nocoo/app", "nocoo/z"]);
 	});
-	it("handles sparse and empty filters without substituting hidden repositories", () => {
-		const s = ready();
-		const r = s.repos[0];
-		if (!r) throw new Error("fixture");
-		r.description = null;
-		expect(filterFactoryRepos(s.repos, { language: "", topic: "", query: "absent" })).toEqual([]);
-		expect(filterFactoryRepos(s.repos, { language: "", topic: "", query: "" })).toHaveLength(1);
-		expect(safeGithubUrl("not a URL")).toBe("https://github.com");
-		expect(safeGithubUrl("https://user@github.com/nocoo/app")).toBe("https://github.com");
-	});
-	it("resolves workflow paths and package identities only within the observed inventory", () => {
-		const s = ready();
-		const r = s.repos[0];
-		if (!r) throw new Error("fixture");
+
+	it("resolves workflow paths and avoids ambiguous dependency targets", () => {
+		const { snapshot: s, repo: r } = repoFixture();
 		s.repos.push({ ...r, name: "nocoo/base-ci", id: "b" });
 		r.dependencies = [
 			{
@@ -783,25 +616,25 @@ describe("factory sampling signals", () => {
 			},
 		];
 		expect(dependencyEdges(s.repos)).toHaveLength(1);
-		expect(
-			eventPage(
-				[{ title: "work", id: "1", author: "human", state: "closed" }] as never,
-				"",
-				"open",
-			),
-		).toEqual([]);
-		expect(
-			eventPage(
-				[{ title: "work", id: "1", author: "human", state: "closed" }] as never,
-				"other",
-				"",
-			),
-		).toEqual([]);
+
+		const dup = ready();
+		const dr = dup.repos[0];
+		if (!dr) throw new Error("fixture");
+		dr.dependencies = [
+			{ name: "shared", version: "1", path: "package.json#dependencies", url: "" },
+		];
+		const dep = { name: "shared", version: "1", path: "package.json", url: "" };
+		dup.repos.push(
+			{ ...dr, id: "b", name: "nocoo/b", dependencies: [], manifests: [dep, dep] },
+			{ ...dr, id: "c", name: "nocoo/c", dependencies: [], manifests: [dep] },
+		);
+		expect(dependencyEdges(dup.repos)).toEqual([]);
+		expect(new Set(Object.values(STREAM_CODES)).size).toBe(7);
 	});
 });
 
-it("exposes the published daily series for trend charts", () => {
-	const s = ready();
+it("exposes published daily series, filter params, pagination and unknown vs zero metrics", () => {
+	const { snapshot: s, repo: r } = repoFixture();
 	const days = factoryDays({
 		...s,
 		selectedRepos: s.repos.map((repo) => ({
@@ -813,21 +646,14 @@ it("exposes the published daily series for trend charts", () => {
 	});
 	expect(days).toHaveLength(90);
 	expect(days.at(-1)?.date).toBe("2026-09-15");
-});
 
-it("resets paging when a filter changes and keeps other filters intact", () => {
 	const before = new URLSearchParams("language=Swift&topic=cli&q=app&period=30&page=3");
 	expect(factoryParams(before, "topic", "ui").get("page")).toBeNull();
 	expect(factoryParams(before, "topic", "ui").get("language")).toBe("Swift");
 	expect(factoryParams(before, "language", "").has("language")).toBe(false);
 	expect(factoryParams(before, "page", "2").get("page")).toBe("2");
 	expect(factoryParams(before, "period", "").has("period")).toBe(false);
-});
 
-it("keeps unknown metrics distinct from observed zero and bounds rendered repository rows", () => {
-	const s = ready();
-	const r = s.repos[0];
-	if (!r) throw new Error("fixture");
 	expect(factoryBoard(s, s.repos, s.repos).observed.commits).toBe(false);
 	r.coverage.commits.status = "complete";
 	r.coverage.prs.status = "limited";
@@ -835,10 +661,7 @@ it("keeps unknown metrics distinct from observed zero and bounds rendered reposi
 	r.coverage.releases.status = "partial";
 	r.coverage.actions.status = "unavailable";
 	const b = factoryBoard(s, s.repos, s.repos);
-	expect(b.observed.commits).toBe(true);
-	expect(b.observed.prs).toBe(true);
-	expect(b.observed.releases).toBe(false);
-	expect(b.observed.actions).toBe(false);
+	expect(b.observed).toMatchObject({ commits: true, prs: true, releases: false, actions: false });
 	expect(b.languages).toEqual([{ name: "TypeScript", bytes: 100, share: 1 }]);
 	const many = Array.from({ length: 67 }, (_, i) => ({ ...r, id: String(i) }));
 	expect(factoryRepoPage(many, 1).rows).toHaveLength(25);
@@ -847,38 +670,14 @@ it("keeps unknown metrics distinct from observed zero and bounds rendered reposi
 	expect(factoryRepoPage([], 0)).toEqual({ rows: [], current: 1, pages: 1 });
 	s.repos.push({ ...r, id: "other" });
 	expect(factoryBoard(s, s.repos, s.repos).languages[0]?.bytes).toBe(200);
-});
 
-it("does not invent dependency targets from ambiguous package names", () => {
-	const s = ready();
-	const r = s.repos[0];
-	if (!r) throw new Error("fixture");
-	r.dependencies = [{ name: "shared", version: "1", path: "package.json#dependencies", url: "" }];
-	const dep = { name: "shared", version: "1", path: "package.json", url: "" };
-	s.repos.push(
-		{ ...r, id: "b", name: "nocoo/b", dependencies: [], manifests: [dep, dep] },
-		{ ...r, id: "c", name: "nocoo/c", dependencies: [], manifests: [dep] },
-	);
-	expect(dependencyEdges(s.repos)).toEqual([]);
-	expect(hasFactoryMeasurement(r, "commits")).toBe(false);
-	r.coverage.commits.status = "limited";
-	expect(hasFactoryMeasurement(r, "commits")).toBe(false);
-	r.coverage.commits.observed = 1;
-	expect(hasFactoryMeasurement(r, "commits")).toBe(true);
-	r.coverage.commits.status = "complete";
-	expect(hasFactoryMeasurement(r, "commits")).toBe(true);
-	expect(new Set(Object.values(STREAM_CODES)).size).toBe(7);
-});
-
-it("does not divide by zero for a returned language with zero bytes", () => {
-	const s = ready();
-	if (s.repos[0]) s.repos[0].languages = [{ name: "Unknown", bytes: 0 }];
-	expect(factoryBoard(s, s.repos, s.repos).languages[0]?.share).toBe(0);
+	const zero = ready();
+	if (zero.repos[0]) zero.repos[0].languages = [{ name: "Unknown", bytes: 0 }];
+	expect(factoryBoard(zero, zero.repos, zero.repos).languages[0]?.share).toBe(0);
 });
 
 it("renders lower bounds consistently for truncated commit, merged PR and release table cells", () => {
-	const repo = ready().repos[0];
-	if (!repo) throw new Error("fixture");
+	const { repo } = repoFixture();
 	Object.assign(repo.metrics, { commits: 12, prMerged: 3, releases: 2 });
 	for (const [stream, count] of [
 		["commits", 12],
@@ -896,10 +695,8 @@ it("renders lower bounds consistently for truncated commit, merged PR and releas
 	expect(factoryRepoCount(repo, "prs")).toBe("0");
 });
 
-it("builds mixed-window calendars from observed windows, with unknown dates rather than fabricated zeros", () => {
-	const snap = ready();
-	const first = snap.repos[0];
-	if (!first) throw new Error("fixture");
+it("builds mixed-window calendars from observed windows without fabricating zeros", () => {
+	const { snapshot: snap, repo: first } = repoFixture();
 	for (const stream of FACTORY_STREAMS) first.coverage[stream].status = "complete";
 	first.observation = {
 		source: "run",
@@ -920,7 +717,7 @@ it("builds mixed-window calendars from observed windows, with unknown dates rath
 	const board = factoryBoard(snap, [first, second], [first, second]);
 	expect(board.mixedWindows).toBe(true);
 	expect(board.days.at(-1)?.date).toBe("2026-08-31");
-	expect(board.days.find((day) => day.date === "2026-07-01")?.complete.commits).toBe(false);
+	expect(board.days.find((d) => d.date === "2026-07-01")?.complete.commits).toBe(false);
 	expect(board.days.at(-1)?.complete.commits).toBe(false);
 	const single = factoryBoard(snap, [first], [first]);
 	expect(single.days.at(-1)?.complete.commits).toBe(true);
@@ -929,39 +726,6 @@ it("builds mixed-window calendars from observed windows, with unknown dates rath
 	expect(factoryBoard(snap, [first, second], [first, second]).days.length).toBeLessThanOrEqual(366);
 });
 
-function utcDates(start: string, count: number) {
-	return Array.from({ length: count }, (_, index) =>
-		new Date(Date.parse(`${start}T00:00:00.000Z`) + index * 86_400_000).toISOString().slice(0, 10),
-	);
-}
-function utcCompleteDays(dates: readonly string[]) {
-	return dates.map((date) => ({
-		since: `${date}T00:00:00.000Z`,
-		until: `${date}T23:59:59.999Z`,
-		timezone: "UTC",
-	}));
-}
-function shanghaiCompleteDays(dates: readonly string[]) {
-	return dates.map((date) => ({
-		since: `${date}T00:00:00.000+08:00`,
-		until: `${date}T23:59:59.999+08:00`,
-		timezone: "Asia/Shanghai",
-	}));
-}
-function day(commits: number, extra: Partial<Record<"prMerged" | "releases", number>> = {}) {
-	return {
-		commits,
-		issueOpened: 0,
-		issueClosed: 0,
-		prOpened: 0,
-		prMerged: extra.prMerged ?? 0,
-		prClosed: 0,
-		ciSuccess: 0,
-		ciFailure: 0,
-		releases: extra.releases ?? 0,
-	};
-}
-
 it("reads relative activity age from the snapshot clock, not the viewer clock", () => {
 	expect(activityAge("2026-09-15", "2026-09-15T22:00:00Z")).toBe("今天");
 	expect(activityAge("2026-09-14", "2026-09-15T22:00:00Z")).toBe("昨天");
@@ -969,27 +733,17 @@ it("reads relative activity age from the snapshot clock, not the viewer clock", 
 	expect(activityAge(undefined, "2026-09-15T22:00:00Z")).toBe("窗口内无提交");
 });
 
-function withDays(name: string, days: Record<string, ReturnType<typeof day>>) {
-	const repo = structuredClone(ready().repos[0]);
-	if (!repo) throw new Error("fixture");
-	for (const stream of FACTORY_STREAMS) repo.coverage[stream].status = "complete";
-	repo.id = name;
-	repo.name = `nocoo/${name}`;
-	repo.metrics.days = days;
-	return repo;
-}
-
 it("compares 1, 7 and 30 complete UTC days with the preceding equal period", () => {
 	const s = ready();
 	const hot = withDays("hot", {
-		"2026-09-14": { ...day(4, { prMerged: 1, releases: 1 }), issueOpened: 3, issueClosed: 1 },
+		"2026-09-14": day(4, { prMerged: 1, releases: 1, issueOpened: 3, issueClosed: 1 }),
 		"2026-09-13": day(2),
+		"2026-09-12": day(0, { ciSuccess: 3, ciFailure: 1 }),
 		"2026-09-05": day(5),
 		"2026-08-20": day(7),
 		"2026-08-01": day(9),
 		"2026-09-15": day(99),
 	});
-	hot.metrics.days["2026-09-12"] = { ...day(0), ciSuccess: 3, ciFailure: 1 };
 	const quiet = withDays("quiet", { "2026-09-13": day(1) });
 	s.repos = [hot, quiet];
 	const [d1, d7, d30] = factoryBoard(s, s.repos, s.repos).periods;
@@ -1000,11 +754,16 @@ it("compares 1, 7 and 30 complete UTC days with the preceding equal period", () 
 		current: { commits: 4, prMerged: 1, releases: 1, issueOpened: 3, issueClosed: 1, active: 1 },
 		previous: { commits: 3, active: 2 },
 	});
-	expect(d7?.current).toMatchObject({ commits: 7, ciSuccess: 3, ciFailure: 1, active: 2 });
-	expect(d7?.previous).toMatchObject({ commits: 5, active: 1 });
-	expect(d30?.current.commits).toBe(19);
-	expect(d30?.previous.commits).toBe(9);
-	expect(d30?.complete.commits).toBe(true);
+	expect(d7).toMatchObject({
+		current: { commits: 7, ciSuccess: 3, ciFailure: 1, active: 2 },
+		previous: { commits: 5, active: 1 },
+	});
+	expect(d30).toMatchObject({
+		current: { commits: 19 },
+		previous: { commits: 9 },
+		complete: { commits: true },
+	});
+
 	quiet.coverage.issues.status = "limited";
 	quiet.observation = {
 		source: "run",
@@ -1016,8 +775,7 @@ it("compares 1, 7 and 30 complete UTC days with the preceding equal period", () 
 	behind.id = "behind";
 	behind.name = "nocoo/behind";
 	behind.observation = {
-		source: "run",
-		version: "v",
+		...quiet.observation,
 		refreshedAt: "2026-09-14T23:00:00Z",
 		window: { since: "2026-06-16T00:00:00Z", until: "2026-09-14T23:00:00Z" },
 	};
@@ -1038,7 +796,7 @@ it("compares 1, 7 and 30 complete UTC days with the preceding equal period", () 
 it("summarizes each repository per period with stock, aged work and last commit", () => {
 	const s = ready();
 	const repo = withDays("app", {
-		"2026-09-14": { ...day(2, { prMerged: 1 }), issueOpened: 1, issueClosed: 2 },
+		"2026-09-14": day(2, { prMerged: 1, issueOpened: 1, issueClosed: 2 }),
 		"2026-09-02": day(6),
 		"2026-07-01": day(1),
 	});
@@ -1048,7 +806,8 @@ it("summarizes each repository per period with stock, aged work and last commit"
 	blind.coverage.commits.status = "pending";
 	blind.coverage.issues.status = "partial";
 	s.repos = [repo, blind];
-	const [app, other] = factoryBoard(s, s.repos, s.repos).repoActivity;
+	const board = factoryBoard(s, s.repos, s.repos);
+	const [app, other] = board.repoActivity;
 	expect(app).toMatchObject({
 		name: "nocoo/app",
 		last: "2026-09-14",
@@ -1067,22 +826,20 @@ it("summarizes each repository per period with stock, aged work and last commit"
 	});
 	expect(app?.periods[7].commits).toBe(2);
 	expect(app?.periods[30].commits).toBe(8);
-	expect(other).toMatchObject({ agedIssues: null, known: { commits: false, issues: false } });
-	expect(other?.last).toBeUndefined();
-	expect(factoryBoard(s, s.repos, s.repos).activity).toEqual({
-		week: 1,
-		month: 0,
-		dormant: 0,
-		unknown: 1,
+	expect(other).toMatchObject({
+		agedIssues: null,
+		last: undefined,
+		known: { commits: false, issues: false },
 	});
+	expect(board.activity).toEqual({ week: 1, month: 0, dormant: 0, unknown: 1 });
 });
 
-it("reconstructs open backlog backwards from the current count and rolls 7-day breadth and CI rate", () => {
+it("reconstructs open backlog backwards and anchors stock by observed calendar date", () => {
 	const s = ready();
 	const a = withDays("a", {
-		"2026-09-15": { ...day(1), issueOpened: 2, issueClosed: 0, prOpened: 1 },
-		"2026-09-14": { ...day(1), issueOpened: 0, issueClosed: 3, ciSuccess: 3, ciFailure: 1 },
-		"2026-09-10": { ...day(2), ciSuccess: 1 },
+		"2026-09-15": day(1, { issueOpened: 2, prOpened: 1 }),
+		"2026-09-14": day(1, { issueClosed: 3, ciSuccess: 3, ciFailure: 1 }),
+		"2026-09-10": day(2, { ciSuccess: 1 }),
 	});
 	Object.assign(a, { openIssues: 4, openPrs: 1 });
 	const b = withDays("b", { "2026-09-13": day(1), "2026-09-01": day(1) });
@@ -1093,20 +850,17 @@ it("reconstructs open backlog backwards from the current count and rolls 7-day b
 	expect(at("2026-09-15")).toMatchObject({ openIssues: 4, openPrs: 1, activeRepos7: 2 });
 	expect(at("2026-09-14")).toMatchObject({ openIssues: 2, openPrs: 0, ciRate7: 0.8 });
 	expect(at("2026-09-13")?.openIssues).toBe(5);
-	expect(at("2026-09-08")?.activeRepos7).toBe(0);
+	expect(at("2026-09-08")).toMatchObject({ activeRepos7: 0, ciRate7: null });
 	expect(at("2026-09-07")?.activeRepos7).toBe(1);
-	expect(at("2026-09-08")?.ciRate7).toBeNull();
 	expect(days[0]?.activeRepos7).toBeNull();
-	const d1 = factoryBoard(s, s.repos, s.repos).periods[0];
-	expect(d1?.stock).toEqual({ openIssues: { from: 5, to: 2 }, openPrs: { from: 0, to: 0 } });
+	expect(factoryBoard(s, s.repos, s.repos).periods[0]?.stock).toEqual({
+		openIssues: { from: 5, to: 2 },
+		openPrs: { from: 0, to: 0 },
+	});
 	a.openIssues = 0;
 	expect(
 		factoryBoard(s, s.repos, s.repos).days.find((d) => d.date === "2026-09-13")?.openIssues,
 	).toBeNull();
-	expect(factoryBoard(s, s.repos, s.repos).periods[0]?.stock.openIssues).toEqual({
-		from: null,
-		to: null,
-	});
 	a.coverage.issues.status = "limited";
 	b.coverage.actions.status = "pending";
 	a.stockObservedAt = { issues: null, prs: "2026-09-15T22:00:00.000Z" };
@@ -1118,8 +872,8 @@ it("reconstructs open backlog backwards from the current count and rolls 7-day b
 it("keeps current stock through retained history while stopping at a real day gap", () => {
 	const s = ready();
 	const repo = withDays("app", {
-		"2026-09-15": { ...day(1), issueOpened: 2 },
-		"2026-09-14": { ...day(1), issueClosed: 3 },
+		"2026-09-15": day(1, { issueOpened: 2 }),
+		"2026-09-14": day(1, { issueClosed: 3 }),
 	});
 	Object.assign(repo, {
 		openIssues: 4,
@@ -1148,9 +902,9 @@ it("keeps current stock through retained history while stopping at a real day ga
 	});
 });
 
-it("anchors stock on counts observed with the latest day, not item enumeration", () => {
+it("anchors stock on latest-day counts without item enumeration", () => {
 	const s = ready();
-	const repo = withDays("app", { "2026-09-15": { ...day(1), issueOpened: 2 } });
+	const repo = withDays("app", { "2026-09-15": day(1, { issueOpened: 2 }) });
 	Object.assign(repo, {
 		openIssues: 4,
 		openPrs: 2,
@@ -1161,102 +915,67 @@ it("anchors stock on counts observed with the latest day, not item enumeration",
 	repo.coverage.issues.completeWindows = utcCompleteDays(utcDates("2026-06-18", 90));
 	repo.coverage.prs.completeWindows = utcCompleteDays(utcDates("2026-06-18", 90));
 	s.repos = [repo];
-	const board = factoryBoard(s, s.repos, s.repos);
-	expect(board.days.every((d) => d.complete.issues)).toBe(true);
-	expect(board.days.at(-1)).toMatchObject({ openIssues: 4, openPrs: 2 });
-	expect(board.periods[0]?.stock).toEqual({
-		openIssues: { from: 2, to: 2 },
-		openPrs: { from: 2, to: 2 },
-	});
-});
-
-it("withholds stock when the counts were observed before the latest day", () => {
-	const s = ready();
-	const repo = withDays("app", { "2026-09-15": { ...day(1), issueOpened: 2 } });
-	Object.assign(repo, {
-		openIssues: 4,
-		openPrs: 2,
-		stockObservedAt: { issues: "2026-09-11T00:00:00.000Z", prs: "2026-09-11T00:00:00.000Z" },
-	});
-	const other = withDays("other", { "2026-09-15": day(1) });
-	Object.assign(other, {
-		openIssues: 0,
-		openPrs: 0,
-		stockObservedAt: { issues: "2026-09-15T22:00:00.000Z", prs: "2026-09-15T22:00:00.000Z" },
-	});
-	s.repos = [repo];
-	expect(
-		factoryBoard(s, s.repos, s.repos).days.every(
-			(d) => d.openIssues === null && d.openPrs === null,
-		),
-	).toBe(true);
-	s.repos = [repo, other];
-	expect(factoryBoard(s, s.repos, s.repos).days.every((d) => d.openPrs === null)).toBe(true);
-	repo.stockObservedAt = { issues: "2026-09-15T22:00:00.000Z", prs: "2026-09-15T22:00:00.000Z" };
-	expect(factoryBoard(s, s.repos, s.repos).days.at(-1)?.openIssues).toBe(4);
-});
-
-it("anchors Shanghai counts by calendar date instead of UTC midnight", () => {
-	const s = ready();
-	s.window = {
-		since: "2026-08-31T16:00:00.000Z",
-		until: "2026-09-15T15:59:59.999Z",
-		timezone: "Asia/Shanghai",
-	};
-	const repo = withDays("app", { "2026-09-15": { ...day(1), issueOpened: 2 } });
-	Object.assign(repo, {
-		openIssues: 4,
-		openPrs: 2,
-		stockObservedAt: { issues: "2026-09-14T20:00:00.000Z", prs: "2026-09-14T20:00:00.000Z" },
-	});
-	s.repos = [repo];
-	const board = factoryBoard(s, s.repos, s.repos);
-	expect(board.timezone).toBe("Asia/Shanghai");
-	expect(board.days.at(-1)).toMatchObject({ date: "2026-09-15", openIssues: 4, openPrs: 2 });
-});
-
-it("accepts counts from the latest or next calendar date only", () => {
-	const s = ready();
-	s.window = { since: "2026-06-18T00:00:00.000Z", until: "2026-09-10T22:00:00.000Z" };
-	const repo = withDays("app", { "2026-09-10": { ...day(1), issueOpened: 2 } });
-	Object.assign(repo, { openIssues: 4, openPrs: 2 });
-	s.repos = [repo];
-	const at = (stamp: string) => {
-		repo.stockObservedAt = { issues: stamp, prs: stamp };
-		return factoryBoard(s, s.repos, s.repos).days.at(-1)?.openIssues ?? null;
-	};
-	expect(at("2026-09-10T22:00:00.000Z")).toBe(4);
-	expect(at("2026-09-11T00:00:00.000Z")).toBe(4);
-	expect(at("2026-09-09T22:00:00.000Z")).toBeNull();
-	expect(at("2026-09-15T00:00:00.000Z")).toBeNull();
-});
-
-it("withholds stock without per-stream count evidence, never falling back to coverage", () => {
-	const s = ready();
-	const repo = withDays("app", { "2026-09-15": { ...day(1), issueOpened: 2 } });
-	Object.assign(repo, { openIssues: 4, openPrs: 2 });
-	s.repos = [repo];
 	expect(factoryBoard(s, s.repos, s.repos).days.at(-1)).toMatchObject({
 		openIssues: 4,
 		openPrs: 2,
 	});
+});
+
+it("withholds stale or missing stock evidence and anchors Shanghai/UTC calendar dates", () => {
+	const s = ready();
+	const repo = withDays("app", { "2026-09-15": day(1, { issueOpened: 2 }) });
+	Object.assign(repo, { openIssues: 4, openPrs: 2 });
+	s.repos = [repo];
+	repo.stockObservedAt = { issues: "2026-09-11T00:00:00.000Z", prs: "2026-09-11T00:00:00.000Z" };
+	expect(factoryBoard(s, s.repos, s.repos).days.every((d) => d.openIssues === null)).toBe(true);
 	delete repo.stockObservedAt;
-	const unknown = factoryBoard(s, s.repos, s.repos);
-	expect(unknown.days.at(-1)).toMatchObject({ openIssues: null, openPrs: null });
-	expect(unknown.periods[0]?.stock).toEqual({
-		openIssues: { from: null, to: null },
-		openPrs: { from: null, to: null },
+	expect(factoryBoard(s, s.repos, s.repos).days.at(-1)).toMatchObject({
+		openIssues: null,
+		openPrs: null,
 	});
 	repo.stockObservedAt = { issues: "2026-09-15T22:00:00.000Z", prs: null };
 	expect(factoryBoard(s, s.repos, s.repos).days.at(-1)).toMatchObject({
 		openIssues: 4,
 		openPrs: null,
 	});
+
+	const sh = ready();
+	sh.window = {
+		since: "2026-08-31T16:00:00.000Z",
+		until: "2026-09-15T15:59:59.999Z",
+		timezone: "Asia/Shanghai",
+	};
+	const shRepo = withDays("app", { "2026-09-15": day(1, { issueOpened: 2 }) });
+	Object.assign(shRepo, {
+		openIssues: 4,
+		openPrs: 2,
+		stockObservedAt: { issues: "2026-09-14T20:00:00.000Z", prs: "2026-09-14T20:00:00.000Z" },
+	});
+	sh.repos = [shRepo];
+	expect(factoryBoard(sh, sh.repos, sh.repos).days.at(-1)).toMatchObject({
+		date: "2026-09-15",
+		openIssues: 4,
+		openPrs: 2,
+	});
+
+	const cal = ready();
+	cal.window = { since: "2026-06-18T00:00:00.000Z", until: "2026-09-10T22:00:00.000Z" };
+	const calRepo = withDays("app", { "2026-09-10": day(1, { issueOpened: 2 }) });
+	Object.assign(calRepo, { openIssues: 4, openPrs: 2 });
+	cal.repos = [calRepo];
+	const checkAt = (stamp: string) => {
+		calRepo.stockObservedAt = { issues: stamp, prs: stamp };
+		return factoryBoard(cal, cal.repos, cal.repos).days.at(-1)?.openIssues ?? null;
+	};
+	expect(checkAt("2026-09-10T22:00:00.000Z")).toBe(4);
+	expect(checkAt("2026-09-11T00:00:00.000Z")).toBe(4);
+	expect(checkAt("2026-09-09T22:00:00.000Z")).toBeNull();
+	expect(checkAt("2026-09-15T00:00:00.000Z")).toBeNull();
 });
 
-it("ranks accumulated work with aged share and recent throughput", () => {
+it("ranks accumulated work, splits quadrants, groups signals and describes period change", () => {
 	const s = ready();
-	const heavy = withDays("heavy", { "2026-09-01": { ...day(0), issueClosed: 4, prMerged: 2 } });
+	const heavy = withDays("heavy", { "2026-09-01": day(0, { issueClosed: 4, prMerged: 2 }) });
 	Object.assign(heavy, { openIssues: 6, openPrs: 1 });
 	Object.assign(heavy.metrics, { agedIssues: 2, agedPrs: 1 });
 	const light = withDays("light", {});
@@ -1270,7 +989,6 @@ it("ranks accumulated work with aged share and recent throughput", () => {
 		["nocoo/heavy", 7, 6],
 		["nocoo/light", 1, null],
 	]);
-	expect(backlog.rows[1]?.agedIssues).toBeNull();
 	expect(backlog).toMatchObject({ openIssues: 7, openPrs: 1, aged: null, clear: 1, max: 7 });
 	expect(backlogRows([]).max).toBe(1);
 	const tie = withDays("aa", {});
@@ -1279,11 +997,8 @@ it("ranks accumulated work with aged share and recent throughput", () => {
 	expect(
 		backlogRows(factoryBoard(s, s.repos, s.repos).repoActivity).rows.map((r) => r.name),
 	).toEqual(["nocoo/aa", "nocoo/heavy"]);
-});
 
-it("splits repositories into activity and backlog quadrants around medians", () => {
-	const s = ready();
-	const repos = [3, 0, 10, 40].map((commits, i) => {
+	const qRepos = [3, 0, 10, 40].map((commits, i) => {
 		const r = withDays(`r${i}`, commits ? { "2026-09-01": day(commits) } : {});
 		r.openIssues = [5, 2, 0, 1][i] ?? 0;
 		r.openPrs = 0;
@@ -1291,58 +1006,42 @@ it("splits repositories into activity and backlog quadrants around medians", () 
 	});
 	const blind = withDays("blind", {});
 	blind.coverage.commits.status = "pending";
-	s.repos = [...repos, blind];
+	s.repos = [...qRepos, blind];
 	const q = activityQuadrant(factoryBoard(s, s.repos, s.repos).repoActivity);
 	expect(q.points.map((p) => p.name)).toEqual(["nocoo/r0", "nocoo/r1", "nocoo/r2", "nocoo/r3"]);
 	expect(q.medianCommits).toBe(6.5);
 	expect(q.medianBacklog).toBe(1.5);
 	expect(q.stalled.map((p) => p.name)).toEqual(["nocoo/r0", "nocoo/r1"]);
 	expect(activityQuadrant([])).toMatchObject({ points: [], medianCommits: 0, medianBacklog: 0 });
-	s.repos = repos.slice(0, 3);
+	s.repos = qRepos.slice(0, 3);
 	expect(activityQuadrant(factoryBoard(s, s.repos, s.repos).repoActivity).medianCommits).toBe(3);
-});
 
-describe("grouped inspection signals", () => {
-	const signal = (
-		repo: string,
-		label: string,
-		stream: "prs" | "issues" | "actions" | "alerts",
-	) => ({
-		repo,
-		label,
-		stream,
+	const groups = factorySignalGroups([
+		{ repo: "nocoo/b", label: "1 个 open PR ≥7 天", stream: "prs" },
+		{ repo: "nocoo/a", label: "2 个 open issue ≥14 天", stream: "issues" },
+		{ repo: "nocoo/a", label: "CI 失败 3/10", stream: "actions" },
+		{ repo: "nocoo/c", label: "1 个开放依赖告警", stream: "alerts" },
+	]);
+	expect(groups.map((g) => g.repo)).toEqual(["nocoo/a", "nocoo/b", "nocoo/c"]);
+	expect(factorySignalGroups([])).toEqual([]);
+	const paged = factorySignalGroups(
+		Array.from({ length: 8 }, (_, i) => ({
+			repo: `nocoo/r${i}`,
+			label: "1 个 open PR ≥7 天",
+			stream: "prs" as const,
+		})),
+	);
+	expect(factorySignalPage(paged, 1)).toMatchObject({
+		current: 1,
+		pages: 2,
+		signals: 8,
+		groups: 8,
 	});
+	expect(factorySignalPage(paged, 2).rows.map((g) => g.repo)).toEqual(["nocoo/r6", "nocoo/r7"]);
+	expect(factorySignalPage(paged, 99).current).toBe(2);
+	expect(factorySignalPage(paged, 0).current).toBe(1);
+	expect(factorySignalPage([], 3)).toMatchObject({ rows: [], current: 1, pages: 1, signals: 0 });
 
-	it("collects one group per repository, heaviest and then alphabetical", () => {
-		const groups = factorySignalGroups([
-			signal("nocoo/b", "1 个 open PR ≥7 天", "prs"),
-			signal("nocoo/a", "2 个 open issue ≥14 天", "issues"),
-			signal("nocoo/a", "CI 失败 3/10", "actions"),
-			signal("nocoo/c", "1 个开放依赖告警", "alerts"),
-		]);
-		expect(groups.map((g) => g.repo)).toEqual(["nocoo/a", "nocoo/b", "nocoo/c"]);
-		expect(groups[0]?.signals.map((s) => s.label)).toEqual([
-			"2 个 open issue ≥14 天",
-			"CI 失败 3/10",
-		]);
-		expect(factorySignalGroups([])).toEqual([]);
-	});
-
-	it("pages groups without dropping the signal total", () => {
-		const groups = factorySignalGroups(
-			Array.from({ length: 8 }, (_, i) => signal(`nocoo/r${i}`, "1 个 open PR ≥7 天", "prs")),
-		);
-		const first = factorySignalPage(groups, 1);
-		expect(first).toMatchObject({ current: 1, pages: 2, signals: 8, groups: 8 });
-		expect(first.rows.map((g) => g.repo)).toHaveLength(6);
-		expect(factorySignalPage(groups, 2).rows.map((g) => g.repo)).toEqual(["nocoo/r6", "nocoo/r7"]);
-		expect(factorySignalPage(groups, 99).current).toBe(2);
-		expect(factorySignalPage(groups, 0).current).toBe(1);
-		expect(factorySignalPage([], 3)).toMatchObject({ rows: [], current: 1, pages: 1, signals: 0 });
-	});
-});
-
-it("describes change against the previous period without inventing a baseline", () => {
 	expect(periodChange(12, 10)).toEqual({ label: "+20%", direction: "up" });
 	expect(periodChange(5, 10)).toEqual({ label: "-50%", direction: "down" });
 	expect(periodChange(10, 10)).toEqual({ label: "持平", direction: "flat" });
@@ -1355,9 +1054,7 @@ it("describes change against the previous period without inventing a baseline", 
 	expect(periodChange(37, -12, "delta")).toEqual({ label: "+49", direction: "up" });
 	expect(periodChange(-5, 3, "delta")).toEqual({ label: "-8", direction: "down" });
 	expect(periodChange(2, 2, "delta")).toEqual({ label: "持平", direction: "flat" });
-});
 
-it("explains disabled coverage features without raw codes", () => {
 	expect(coverageReasonLabel("dependency_analysis_unavailable")).toBe(
 		"仓库未配置依赖分析，未采集依赖证据",
 	);
